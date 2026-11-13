@@ -131,9 +131,9 @@ async function main() {
     data: {
       name: "기본 배경음악",
       kind: "music",
-      url: "/skins/neon-arcade/audio/bgm_gym_loop.ogg",
-      durationSec: 60,
-      mimeType: "audio/ogg",
+      url: "/skins/neon-arcade/audio/bgm_gym_loop.mp3",
+      durationSec: 1,
+      mimeType: "audio/mpeg",
     },
   });
   const cueFiles = [

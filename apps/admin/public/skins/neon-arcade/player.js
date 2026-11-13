@@ -15,7 +15,7 @@
         restImageUrl: "rest_image.jpg",
         nextLeadSec: 10,
       },
-      music: { id: "demo-m", name: "BGM", url: "audio/bgm_gym_loop.ogg", durationSec: 60 },
+      music: { id: "demo-m", name: "BGM", url: "audio/bgm_gym_loop.mp3", durationSec: 1 },
       voicePack: {
         id: "demo-vp",
         name: "기본",
@@ -104,7 +104,7 @@
   var nextShown = false;
   var loopActive = null;
   var options = DEMO.skin.options;
-  var musicUrl = (DEMO.skin.music && DEMO.skin.music.url) || "audio/bgm_gym_loop.ogg";
+  var musicUrl = (DEMO.skin.music && DEMO.skin.music.url) || "audio/bgm_gym_loop.mp3";
   var cueUrls = {
     countdown5: "audio/count_5.mp3",
     countdown4: "audio/count_4.mp3",
@@ -435,7 +435,7 @@
     A.on = true;
     $("snd").classList.add("hide");
     try {
-      var bgm = new Audio(musicUrl || "audio/bgm_gym_loop.ogg");
+      var bgm = new Audio(musicUrl || "audio/bgm_gym_loop.mp3");
       bgm.loop = true;
       bgm.volume = 0.55;
       A.el.bgm = bgm;
