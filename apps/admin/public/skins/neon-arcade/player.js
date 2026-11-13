@@ -53,8 +53,8 @@
         ],
       },
     ],
-    _videos: [
-      {
+    videos: {
+      v1: {
         id: "v1",
         name: "덤벨 숄더 프레스",
         url: "mvn_shoulder_press.mp4",
@@ -63,7 +63,7 @@
         width: 1920,
         height: 1080,
       },
-      {
+      v2: {
         id: "v2",
         name: "얼터네이트 숄더 프레스",
         url: "mvn_shoulder_press.mp4",
@@ -72,7 +72,7 @@
         width: 1920,
         height: 1080,
       },
-    ],
+    },
   };
 
   function $(id) {
@@ -391,8 +391,22 @@
 
   function collectVideos(program) {
     videosById = {};
-    var list = program._videos || program.videos || [];
-    for (var i = 0; i < list.length; i++) videosById[list[i].id] = list[i];
+    function merge(source) {
+      if (!source) return;
+      if (Array.isArray(source)) {
+        for (var i = 0; i < source.length; i++) {
+          if (source[i] && source[i].id) videosById[source[i].id] = source[i];
+        }
+        return;
+      }
+      var keys = Object.keys(source);
+      for (var k = 0; k < keys.length; k++) {
+        var id = keys[k];
+        if (source[id]) videosById[id] = source[id];
+      }
+    }
+    merge(program.videos);
+    merge(program._videos);
     function walk(items) {
       for (var j = 0; j < items.length; j++) {
         var it = items[j];

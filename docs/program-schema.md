@@ -75,6 +75,8 @@
 
 영상은 원본 1회 클립입니다. 플레이어가 두 버퍼를 번갈아 쓰며 `durationSec` 동안 반복합니다.
 
+초안(`draft`)은 `videoId`만 보관합니다. 게시 시 API가 참조 영상을 Video 테이블에서 읽어 `snapshot.videos` 맵으로 동결합니다(정책 B: 재게시 때만 반영).
+
 ## AudioAsset / VoicePack
 
 | AudioAsset | 타입 |
@@ -95,7 +97,7 @@
 
 관리자 API: `GET/POST/PATCH/DELETE /admin/v1/audio`, `/admin/v1/voice-packs`.
 
-## ProgramVersion
+## ProgramVersion / PublishedSnapshot
 
 게시 시점 스냅샷입니다. 한 번 저장되면 바뀌지 않습니다.
 
@@ -104,15 +106,22 @@
   programId: string,
   version: number,
   publishedAt: string,
-  snapshot: Program
+  snapshot: PublishedSnapshot
+}
+
+PublishedSnapshot = Program & {
+  videos: Record<string, Video>, // id → 동결된 영상 메타·url
+  // skin.music / skin.voicePack 도 게시 시 url까지 풀려 들어감
 }
 ```
 
-초안 저장 → 게시(v1) → 수정 → 재게시(v2). 매장·TV에는 게시된 버전만 반영됩니다.
+초안 저장 → 게시(v1) → 수정 → 재게시(v2). 매장·TV에는 게시된 버전만 반영됩니다.  
+존재하지 않는 `videoId`로 게시하면 `400`과 해당 스텝 경로 메시지가 납니다.
 
-## expand(program)
+## expand(program, videos?)
 
-`packages/shared/src/program.ts`의 순수 함수입니다. 그룹을 `repeat`만큼 펼쳐 `PlayItem[]`을 반환합니다.
+`packages/shared/src/program.ts`의 순수 함수입니다. 그룹을 `repeat`만큼 펼쳐 `PlayItem[]`을 반환합니다.  
+`videos`는 `Video[]` 또는 `Record<id, Video>`(스냅샷 `videos` 맵)입니다.
 
 ```ts
 PlayItem {
@@ -147,9 +156,10 @@ PlayItem {
 
 ```ts
 iframe.contentWindow.postMessage(
-  { type: "mvn:program", program: { ...program, playItems: expand(program) } },
+  { type: "mvn:program", program: { ...program, playItems: expand(program, videos), videos } },
   "*"
 )
+// videos: Record<id, Video> (게시 스냅샷과 동일 형태)
 ```
 
 스킨 파일 경로: `/skins/neon-arcade/index.html` (없으면 내장 미리보기 이미지 사용)

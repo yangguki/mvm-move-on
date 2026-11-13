@@ -9,10 +9,55 @@ import {
   Put,
   UseGuards,
 } from "@nestjs/common";
-import { expand, playTotalSec, validateProgram, type Program as SharedProgram } from "@mvn/shared";
+import {
+  collectVideoRefs,
+  expand,
+  playTotalSec,
+  validateProgram,
+  type Program as SharedProgram,
+  type PublishedSnapshot,
+  type Video,
+  type VideoMap,
+} from "@mvn/shared";
 import { resolveProgramSkin } from "./audio-resolve";
 import { AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
+
+function presentVideo(row: {
+  id: string;
+  name: string;
+  url: string;
+  durationSec: number;
+  thumbnailUrl: string;
+  width: number;
+  height: number;
+}): Video {
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    durationSec: row.durationSec,
+    thumbnailUrl: row.thumbnailUrl,
+    width: row.width,
+    height: row.height,
+  };
+}
+
+async function freezeVideos(prisma: PrismaService, items: SharedProgram["items"]): Promise<VideoMap> {
+  const refs = collectVideoRefs(items);
+  if (!refs.length) return {};
+  const ids = [...new Set(refs.map((ref) => ref.videoId))];
+  const rows = await prisma.video.findMany({ where: { id: { in: ids } } });
+  const byId = new Map(rows.map((row) => [row.id, presentVideo(row)]));
+  const missing = refs.filter((ref) => !byId.has(ref.videoId));
+  if (missing.length) {
+    const detail = missing.map((ref) => `${ref.path}(videoId=${ref.videoId})`).join(", ");
+    throw new BadRequestException(`존재하지 않는 영상이 있어요: ${detail}`);
+  }
+  const videos: VideoMap = {};
+  for (const id of ids) videos[id] = byId.get(id)!;
+  return videos;
+}
 
 type DraftBody = {
   items?: unknown;
@@ -124,7 +169,8 @@ export class ProgramsController {
     const draft = current.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
     const nextVersion = (current.publishedVersion ?? 0) + 1;
     const skin = await resolveProgramSkin(this.prisma, draft.skin);
-    const snapshot = validateProgram({
+    const videos = await freezeVideos(this.prisma, draft.items);
+    const base = validateProgram({
       id: current.id,
       name: current.name,
       status: "published",
@@ -133,6 +179,7 @@ export class ProgramsController {
       skin,
       items: draft.items,
     });
+    const snapshot: PublishedSnapshot = { ...base, videos };
     await this.prisma.$transaction(async (tx) => {
       await tx.programVersion.create({
         data: {
@@ -161,13 +208,13 @@ export class ProgramsController {
     });
     return {
       items: rows.map((version) => {
-        const snap = version.snapshot as SharedProgram;
+        const snap = version.snapshot as PublishedSnapshot;
         return {
           id: version.id,
           version: version.version,
           name: snap.name,
           publishedAt: version.publishedAt,
-          stepCount: expand(snap).length,
+          stepCount: expand(snap, snap.videos ?? {}).length,
           skin: snap.skin,
         };
       }),

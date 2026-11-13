@@ -75,12 +75,48 @@ export type Program = {
   items: ProgramItem[];
 };
 
+/** 게시 스냅샷에 동결된 영상 맵 (id → Video). 이후 Video 수정·삭제는 재게시 전까지 영향 없음 */
+export type VideoMap = Record<string, Video>;
+
+/** 게시된 ProgramVersion.snapshot 형태 */
+export type PublishedSnapshot = Program & {
+  videos: VideoMap;
+};
+
 export type ProgramVersion = {
   programId: string;
   version: number;
   publishedAt: string;
-  snapshot: Program;
+  snapshot: PublishedSnapshot;
 };
+
+export function asVideoList(videos?: Video[] | VideoMap | null): Video[] {
+  if (!videos) return [];
+  return Array.isArray(videos) ? videos : Object.values(videos);
+}
+
+export function asVideoMap(videos?: Video[] | VideoMap | null): VideoMap {
+  if (!videos) return {};
+  if (!Array.isArray(videos)) return { ...videos };
+  const map: VideoMap = {};
+  for (const video of videos) map[video.id] = video;
+  return map;
+}
+
+/** draft items에서 videoId와 스텝 경로를 모읍니다 */
+export function collectVideoRefs(items: ProgramItem[]): Array<{ videoId: string; path: string }> {
+  const refs: Array<{ videoId: string; path: string }> = [];
+  items.forEach((item, index) => {
+    if (isGroup(item)) {
+      item.steps.forEach((step, stepIndex) => {
+        if (step.videoId) refs.push({ videoId: step.videoId, path: `items[${index}].steps[${stepIndex}]` });
+      });
+      return;
+    }
+    if (item.videoId) refs.push({ videoId: item.videoId, path: `items[${index}]` });
+  });
+  return refs;
+}
 
 export type PlayNext = {
   label: string;
@@ -166,8 +202,8 @@ function nextPayload(current: FlatStep, found: { step: FlatStep; afterRest: bool
 }
 
 /** 그룹을 repeat만큼 펼쳐 플레이 순서를 만듭니다. NEXT는 다음 운동에서 자동 생성합니다. */
-export function expand(program: Program, videos: Video[] = []): PlayItem[] {
-  const videoMap = new Map(videos.map((video) => [video.id, video]));
+export function expand(program: Program, videos: Video[] | VideoMap = []): PlayItem[] {
+  const videoMap = new Map(Object.entries(asVideoMap(videos)));
   const flat = flatten(program, videoMap);
   return flat.map((step, index) => {
     const found = findNextExercise(flat, index);

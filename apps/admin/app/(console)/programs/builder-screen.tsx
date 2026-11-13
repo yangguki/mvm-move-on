@@ -540,7 +540,8 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     program.skin.options = skinOptions;
     return program;
   }, [programId, name, status, updatedAt, published, steps, skinOptions]);
-  const playItems = useMemo(() => expand(sharedProgram, videos), [sharedProgram, videos]);
+  const videoMap = useMemo(() => Object.fromEntries(videos.map((video) => [video.id, video])), [videos]);
+  const playItems = useMemo(() => expand(sharedProgram, videoMap), [sharedProgram, videoMap]);
   const total = playTotalSec(playItems);
   const exercise = playItems.filter((item) => item.type === "exercise").reduce((sum, item) => sum + item.durationSec, 0);
   const rest = playItems.filter((item) => item.type === "rest").reduce((sum, item) => sum + item.durationSec, 0);
@@ -593,11 +594,11 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     previewRef.current.contentWindow.postMessage(
       {
         type: "mvn:program",
-        program: { ...sharedProgram, playItems, _videos: videos },
+        program: { ...sharedProgram, playItems, videos: videoMap },
       },
       "*",
     );
-  }, [sharedProgram, playItems, skinFrameOk, videos]);
+  }, [sharedProgram, playItems, skinFrameOk, videoMap]);
 
   if (loading) {
     return <p className="subtle" style={{ padding: 24 }}>프로그램을 불러오는 중이에요</p>;
@@ -843,7 +844,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                   style={{ width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 5, background: "#000", display: "block" }}
                   onLoad={() => {
                     previewRef.current?.contentWindow?.postMessage(
-                      { type: "mvn:program", program: { ...sharedProgram, playItems, _videos: videos } },
+                      { type: "mvn:program", program: { ...sharedProgram, playItems, videos: videoMap } },
                       "*",
                     );
                   }}

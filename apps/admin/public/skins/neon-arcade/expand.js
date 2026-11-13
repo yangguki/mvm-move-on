@@ -58,12 +58,27 @@
     return null;
   }
 
+  function mergeVideos(target, source) {
+    if (!source) return;
+    if (Array.isArray(source)) {
+      for (var i = 0; i < source.length; i++) {
+        if (source[i] && source[i].id) target[source[i].id] = source[i];
+      }
+      return;
+    }
+    var keys = Object.keys(source);
+    for (var k = 0; k < keys.length; k++) {
+      var id = keys[k];
+      if (source[id]) target[id] = source[id];
+    }
+  }
+
   function expand(program, videoList) {
     var videos = {};
-    var list = videoList || [];
-    for (var i = 0; i < list.length; i++) videos[list[i].id] = list[i];
-    if (program && program._videos) {
-      for (var j = 0; j < program._videos.length; j++) videos[program._videos[j].id] = program._videos[j];
+    mergeVideos(videos, videoList);
+    if (program) {
+      mergeVideos(videos, program.videos);
+      mergeVideos(videos, program._videos);
     }
     var flat = flatten(program, videos);
     var out = [];

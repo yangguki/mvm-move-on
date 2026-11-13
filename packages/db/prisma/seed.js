@@ -222,6 +222,15 @@ async function main() {
       },
     },
   };
+  const freezeVideo = (row) => ({
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    durationSec: row.durationSec,
+    thumbnailUrl: row.thumbnailUrl,
+    width: row.width,
+    height: row.height,
+  });
   const snapshot = {
     id: "seed",
     name: "금 머슬핏 A",
@@ -230,6 +239,10 @@ async function main() {
     publishedVersion: 1,
     skin: snapshotSkin,
     items: draft.items,
+    videos: {
+      [videoPress.id]: freezeVideo(videoPress),
+      [videoAlt.id]: freezeVideo(videoAlt),
+    },
   };
   const program = await prisma.program.create({
     data: {

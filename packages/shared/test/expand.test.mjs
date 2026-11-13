@@ -49,6 +49,38 @@ describe("expand", () => {
     assert.equal(play[7].next, undefined);
     assert.equal(play[8].next, undefined);
   });
+
+  it("스냅샷 videos로 expand 시 url이 채워진다", () => {
+    const video = {
+      id: "v1",
+      name: "덤벨 숄더 프레스",
+      url: "/skins/neon-arcade/mvn_shoulder_press.mp4",
+      durationSec: 3,
+      thumbnailUrl: "/media/thumb-shoulder-press.jpg",
+      width: 1920,
+      height: 1080,
+    };
+    const program = {
+      id: "demo",
+      name: "영상 스냅샷",
+      status: "published",
+      draftUpdatedAt: "2026-11-13T00:00:00.000Z",
+      publishedVersion: 1,
+      skin: {
+        id: "neon-arcade",
+        options: { pointColor: "#C8F31D", nextLeadSec: 10 },
+      },
+      items: [{ id: "s1", type: "exercise", durationSec: 20, videoId: "v1" }],
+      videos: { v1: video },
+    };
+
+    const play = expand(program, program.videos);
+
+    assert.equal(play.length, 1);
+    assert.equal(play[0].video?.url, "/skins/neon-arcade/mvn_shoulder_press.mp4");
+    assert.equal(play[0].video?.name, "덤벨 숄더 프레스");
+    assert.equal(play[0].label, "덤벨 숄더 프레스");
+  });
 });
 
 describe("snapshot audio", () => {

@@ -1,5 +1,5 @@
 import { Controller, Get, NotFoundException, Param } from "@nestjs/common";
-import { expand, type Program as SharedProgram } from "@mvn/shared";
+import { expand, type PublishedSnapshot } from "@mvn/shared";
 import { PrismaService } from "./prisma.service";
 
 @Controller("player/v1/programs")
@@ -16,10 +16,12 @@ export class PlayerController {
       where: { programId_version: { programId: id, version: program.publishedVersion } },
     });
     if (!version) throw new NotFoundException("발행 스냅샷을 찾을 수 없어요");
-    const snapshot = version.snapshot as SharedProgram;
+    const snapshot = version.snapshot as PublishedSnapshot;
+    const videos = snapshot.videos ?? {};
     return {
       ...snapshot,
-      playItems: expand(snapshot),
+      videos,
+      playItems: expand(snapshot, videos),
       publishedVersion: version.version,
       publishedAt: version.publishedAt.toISOString(),
     };
