@@ -61,6 +61,30 @@ async function main() {
     storeByCode.set(store.code, row);
   }
 
+  for (const device of devices) {
+    const data = {
+      name: device.name,
+      storeId: storeByCode.get(device.store).id,
+      skinId: skinBySlug.get(device.skin).id,
+      status: device.status,
+      statusLabel: device.statusLabel,
+      playing: device.playing ?? null,
+      progress: device.progress ?? null,
+      appVersion: device.appVersion,
+      versionWarn: !!device.versionWarn,
+      seenLabel: device.seenLabel,
+      seenAlert: !!device.seenAlert,
+      guide: !!device.guide,
+      offline: !!device.offline,
+      videoLoopMode: "ab",
+    };
+    await prisma.device.upsert({
+      where: { code: device.code },
+      update: data,
+      create: { code: device.code, ...data },
+    });
+  }
+
   await prisma.account.upsert({
     where: { email: "inkuk.yang@mvmfit.kr" },
     update: {
@@ -78,75 +102,90 @@ async function main() {
     },
   });
 
-  for (const device of devices) {
-    const data = {
-      name: device.name,
-      status: device.status,
-      statusLabel: device.statusLabel,
-      playing: device.playing,
-      progress: device.progress ?? null,
-      appVersion: device.appVersion,
-      versionWarn: device.versionWarn ?? false,
-      seenLabel: device.seenLabel,
-      seenAlert: device.seenAlert ?? false,
-      guide: device.guide ?? false,
-      offline: device.offline ?? false,
-      videoLoopMode: "ab",
-      storeId: storeByCode.get(device.store).id,
-      skinId: skinBySlug.get(device.skin).id,
-    };
-    await prisma.device.upsert({
-      where: { code: device.code },
-      update: data,
-      create: { code: device.code, ...data },
-    });
-  }
+  await prisma.video.deleteMany();
+  const videoPress = await prisma.video.create({
+    data: {
+      name: "덤벨 숄더 프레스",
+      url: "/skins/neon-arcade/mvn_shoulder_press.mp4",
+      durationSec: 3,
+      thumbnailUrl: "/media/thumb-shoulder-press.jpg",
+      width: 1920,
+      height: 1080,
+    },
+  });
+  const videoAlt = await prisma.video.create({
+    data: {
+      name: "얼터네이트 숄더 프레스",
+      url: "/skins/neon-arcade/mvn_shoulder_press.mp4",
+      durationSec: 4,
+      thumbnailUrl: "/media/thumb-alt-press.jpg",
+      width: 1920,
+      height: 1080,
+    },
+  });
 
+  const draft = {
+    items: [
+      { id: "guide-1", type: "guide", durationSec: 10, label: "시작 카운트다운", text: "카운트다운" },
+      {
+        id: "group-a",
+        type: "group",
+        repeat: 3,
+        steps: [
+          { id: "ex-1", type: "exercise", durationSec: 45, label: "덤벨 숄더 프레스", videoId: videoPress.id },
+          { id: "rest-1", type: "rest", durationSec: 15, label: "휴식" },
+          { id: "ex-2", type: "exercise", durationSec: 45, label: "얼터네이트 숄더 프레스", videoId: videoAlt.id },
+          { id: "rest-2", type: "rest", durationSec: 15, label: "휴식" },
+        ],
+      },
+      { id: "ex-fin", type: "exercise", durationSec: 40, label: "버닝 피니셔" },
+    ],
+    skin: {
+      id: "neon-arcade",
+      options: {
+        pointColor: "#C8F31D",
+        restImageUrl: "/skins/neon-arcade/rest_image.jpg",
+        musicUrl: "/skins/neon-arcade/audio/bgm_gym_loop.ogg",
+        nextLeadSec: 10,
+      },
+    },
+  };
+
+  await prisma.programVersion.deleteMany();
   await prisma.program.deleteMany();
-  const steps = [
-    { position: 1, kind: "countdown", label: "시작 카운트다운", subtitle: "카운트다운", seconds: 10 },
-    { position: 2, kind: "exercise", label: "워밍업 · 제자리 걷기", subtitle: "운동 · 루프", seconds: 120 },
-    { position: 3, kind: "exercise", label: "덤벨 숄더 프레스", subtitle: "운동 · 12회", seconds: 45, groupKey: "a", groupLabel: "A 그룹 · 어깨", groupRepeat: 3 },
-    { position: 4, kind: "rest", label: "휴식", seconds: 15, groupKey: "a", groupLabel: "A 그룹 · 어깨", groupRepeat: 3 },
-    { position: 5, kind: "exercise", label: "얼터네이트 숄더 프레스", subtitle: "운동 · 좌우 10회", seconds: 45, groupKey: "a", groupLabel: "A 그룹 · 어깨", groupRepeat: 3 },
-    { position: 6, kind: "rest", label: "휴식", seconds: 15, groupKey: "a", groupLabel: "A 그룹 · 어깨", groupRepeat: 3 },
-    { position: 7, kind: "exercise", label: "3번 머신 · 랫 풀다운", subtitle: "운동 · 15회", seconds: 45, groupKey: "m", groupLabel: "머신 서킷", groupRepeat: 4 },
-    { position: 8, kind: "rest", label: "휴식 · 중앙으로 이동", seconds: 15, groupKey: "m", groupLabel: "머신 서킷", groupRepeat: 4 },
-    { position: 9, kind: "exercise", label: "버피", subtitle: "운동 · 최대 반복", seconds: 40, groupKey: "m", groupLabel: "머신 서킷", groupRepeat: 4 },
-    { position: 10, kind: "rest", label: "휴식", seconds: 20, groupKey: "m", groupLabel: "머신 서킷", groupRepeat: 4 },
-    { position: 11, kind: "exercise", label: "플랭크", subtitle: "운동", seconds: 45, groupKey: "b", groupLabel: "B 그룹 · 코어", groupRepeat: 3 },
-    { position: 12, kind: "rest", label: "휴식", seconds: 15, groupKey: "b", groupLabel: "B 그룹 · 코어", groupRepeat: 3 },
-    { position: 13, kind: "exercise", label: "크런치", subtitle: "운동", seconds: 45, groupKey: "b", groupLabel: "B 그룹 · 코어", groupRepeat: 3 },
-    { position: 14, kind: "rest", label: "휴식", seconds: 15, groupKey: "b", groupLabel: "B 그룹 · 코어", groupRepeat: 3 },
-    { position: 15, kind: "exercise", label: "버닝 피니셔", subtitle: "운동 · 45초/15초 인터벌", seconds: 300 },
-    { position: 16, kind: "exercise", label: "쿨다운", subtitle: "운동", seconds: 170 },
-  ];
+  const snapshot = {
+    id: "seed",
+    name: "금 머슬핏 A",
+    status: "published",
+    draftUpdatedAt: new Date().toISOString(),
+    publishedVersion: 1,
+    skin: draft.skin,
+    items: draft.items,
+  };
   const program = await prisma.program.create({
     data: {
       name: "금 머슬핏 A",
-      status: "draft",
-      skinId: skinBySlug.get("neon").id,
-      lockVersion: 8,
-      draftVersion: 8,
-      publishedVersion: 7,
-      steps: { create: steps },
+      status: "published",
+      draft,
+      draftUpdatedAt: new Date(),
+      publishedVersion: 1,
       versions: {
         create: {
-          version: 7,
-          name: "금 머슬핏 A",
-          skinId: skinBySlug.get("neon").id,
-          steps: { create: steps },
+          version: 1,
+          snapshot: { ...snapshot },
         },
       },
     },
   });
 
-  console.log(`seeded account, ${stores.length} stores, ${devices.length} devices, program ${program.name}`);
+  console.log(`seeded account, stores, devices, videos, program ${program.name}`);
 }
 
 main()
   .catch((error) => {
     console.error(error);
-    process.exitCode = 1;
+    process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

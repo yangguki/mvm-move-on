@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MVN · 네온 아케이드</title>
+<style>
+  :root{--neon:#00f0ff;--pink:#ff2bd6;--lime:#b6ff3b;--bg:#07051a;--dur:.7s;--ease:cubic-bezier(.65,0,.35,1)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:none;font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif}
+  /* TV 1920x1080 기준 스테이지, 다른 해상도에선 비율 유지하며 축소 */
+  .stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform-origin:center;
+    background:radial-gradient(ellipse at 50% -10%,#2a0d5c 0%,var(--bg) 60%);
+    display:flex;flex-direction:column;align-items:center;padding:12px 60px 6px;gap:8px;color:#fff}
+  /* 스캔라인은 영상 프레임(z2) 아래에 둠: 영상 위 전면 반투명 레이어가 매 영상 프레임마다 합성되던 비용 제거(흰 영상 위에선 원래 안 보임) */
+  .stage::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+    background:linear-gradient(transparent 0 50%,rgba(255,255,255,.03) 50% 100%);background-size:100% 4px}
+  /* 상단 스킨 영역 */
+  /* 상단 HUD는 영상 자리를 최대로 쓰도록 68px 한 줄로 압축 */
+  .hud{width:100%;height:68px;flex:0 0 auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:40px}
+  .fade{transition:opacity .3s ease}
+  .fade.out{opacity:0}
+  .step{font-size:28px;font-weight:800;letter-spacing:4px;color:var(--lime);text-shadow:0 0 12px var(--lime)}
+  .step small{display:block;font-size:18px;letter-spacing:2px;color:#cfc8ff;text-shadow:none;margin-top:4px}
+  .name{font-size:52px;line-height:1.1;font-weight:900;text-align:center;color:#fff;
+    text-shadow:0 0 8px var(--neon),0 0 24px var(--neon),0 0 48px var(--pink)}
+  .timer{justify-self:end;display:flex;align-items:center;gap:16px;font-family:"Courier New",monospace;font-size:64px;font-weight:700;color:var(--pink);
+    text-shadow:0 0 10px var(--pink),0 0 30px var(--pink);line-height:1}
+  .timer span{font-size:20px;color:#cfc8ff;text-shadow:none;letter-spacing:3px}
+  .bar{width:100%;height:8px;flex:0 0 auto;border-radius:4px;background:#1b1440;border:1px solid #3a2a7a;overflow:hidden}
+  .bar i{display:block;height:100%;width:100%;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--neon),var(--pink));
+    box-shadow:0 0 16px var(--neon)}
+  /* 하단 영역 1800x970. 메인 자리는 가운데 1776x970(영상은 cover로 위아래 흰 여백만 약간 잘림).
+     NEXT 표시 중엔 메인을 transform(translate+scale)으로 왼쪽 1228폭까지 줄이고, 오른쪽 540px에 NEXT 패널 */
+  .videoWrap{flex:1;min-height:0;width:100%;position:relative}
+  .slotMain{position:absolute;left:12px;top:0;width:1776px;height:970px}
+  .next{position:absolute;z-index:3;right:0;top:0;bottom:0;width:540px;display:flex;flex-direction:column;justify-content:center;gap:20px;
+    opacity:0;transform:translateX(40px);transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
+  .next.show{opacity:1;transform:none}
+  .next .tag{align-self:flex-start;font-size:50px;font-weight:900;letter-spacing:8px;color:var(--bg);background:var(--lime);
+    padding:8px 26px;border-radius:14px;box-shadow:0 0 18px var(--lime);animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:.55}}
+  .next .slotPv{width:100%;aspect-ratio:16/9}
+  .next .nname{font-size:50px;font-weight:800;line-height:1.25;text-shadow:0 0 10px var(--pink)}
+  .next .nmeta{font-size:32px;color:#cfc8ff;letter-spacing:2px}
+  /* 영상 프레임 2개(A/B): 역할(main/pv)에 따라 자리·테두리가 바뀌고, 전환 시 미리보기가 메인 자리로 커지며 이동 */
+  /* 영상 프레임은 스케일된 스테이지 밖(body)에 실제 px로 배치 → 영상 요소에 상위 transform·둥근 클리핑·위 겹침 없음(파일 단독 재생과 같은 빠른 합성 경로).
+     테두리·글로우는 프레임(영상 뒤)에만, 영상은 테두리 안쪽 10px에 네모로(클리핑 없음) */
+  .frame{position:absolute;background:#000;z-index:2;transform-origin:0 0}
+  /* cover + 46%: 메인(1776x970) 기준 원본 위 16px·아래 19px만 잘림(인물·덤벨·발 바깥 흰 여백). 16:9 미리보기는 잘림 없음 */
+  .frame video{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);object-fit:cover;object-position:50% 46%;display:block;background:#000}
+  .frame.main{border-radius:32px;border:4px solid var(--neon);
+    box-shadow:0 0 24px var(--neon),0 0 60px rgba(255,43,214,.45),inset 0 0 20px rgba(0,240,255,.3);
+    transition:transform var(--dur) var(--ease)}
+  .frame.pv{border-radius:24px;border:4px solid var(--pink);box-shadow:0 0 18px var(--pink);opacity:0;transform:translateX(40px);visibility:hidden;
+    transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease),visibility 0s linear var(--dur)}
+  .frame.pv.show{opacity:1;transform:none;visibility:visible;transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
+  .frame.anim{transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
+  .frame.leaving{opacity:0;z-index:1;visibility:visible}
+  .frame.grow{z-index:3}
+  .noanim,.noanim *{transition:none!important}
+  /* 휴식(REST): 메인 자리엔 휴식 이미지(영상 위 크로스페이드), 오른쪽 위 REST + 남은 초, 그 아래 NEXT 패널(다음 운동 미리보기) 유지 */
+  .frame .still{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);object-fit:cover;display:block;opacity:0;visibility:hidden;
+    transition:opacity .6s ease,visibility 0s linear .6s;pointer-events:none}
+  .frame.stillOn .still{opacity:1;visibility:visible;transition:opacity .6s ease}  /* 안 보일 땐 visibility:hidden → 영상 위 투명 레이어 없음 */
+  .stage.resting .timer b{color:var(--lime);text-shadow:0 0 10px var(--lime),0 0 30px var(--lime)}
+  .stage.resting .bar i{background:linear-gradient(90deg,var(--lime),var(--neon));box-shadow:0 0 16px var(--lime)}
+  .rest{position:absolute;z-index:4;display:flex;flex-direction:row;align-items:center;gap:24px;
+    opacity:0;transform:translateX(40px);transition:opacity .5s,transform .5s;pointer-events:none}
+  .rest.show{opacity:1;transform:none}
+  .rest .big{font-size:96px;font-weight:900;letter-spacing:10px;line-height:1;color:var(--lime);
+    text-shadow:0 0 16px var(--lime),0 0 48px var(--lime);animation:blink 1.2s steps(2) infinite}
+  .rest .cnt{font-family:"Courier New",monospace;font-size:150px;font-weight:700;line-height:1;color:var(--pink);
+    text-shadow:0 0 14px var(--pink),0 0 40px var(--pink)}
+  /* 소리 켜기(자동재생 정책): 클릭/리모컨 OK 시 오디오 시작 후 숨김 */
+  .sndBtn{position:absolute;z-index:8;left:50%;bottom:80px;transform-origin:50% 100%;transform:translateX(-50%) scale(var(--s,1));font:inherit;font-size:44px;font-weight:900;
+    letter-spacing:3px;color:var(--bg);background:var(--neon);border:4px solid #fff;border-radius:999px;padding:18px 56px;
+    box-shadow:0 0 24px var(--neon),0 0 60px var(--pink);cursor:pointer;animation:blink 1.2s steps(2) infinite}
+  .sndBtn:focus{outline:none;box-shadow:0 0 0 8px var(--pink),0 0 40px var(--neon)}
+  .sndBtn.hide{display:none}
+
+  #logo{display:none;height:48px;justify-self:start}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="hud">
+    <div class="step fade" id="stepBox"><img id="logo" alt=""><span id="stepNo">STEP 1 / 1</span><small id="meta"></small></div>
+    <div class="name fade" id="name"></div>
+    <div class="timer"><span id="tl">REMAINING</span><b id="t">00:20</b></div>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="videoWrap" id="vw">
+    <div class="slotMain" id="slotMain"></div>
+    <div class="next" id="next">
+      <div class="tag" id="ntag">NEXT</div>
+      <div class="slotPv" id="slotPv"></div>
+      <div class="nname" id="nname"></div>
+      <div class="nmeta" id="nmeta"></div>
+    </div>
+  </div>
+  <div class="rest" id="rest">
+    <div class="big">REST</div>
+    <div class="cnt" id="rcnt"></div>
+  </div>
+</div>
+<div class="frame main" id="fA"><video muted playsinline preload="auto"></video><img class="still" src="rest_image.jpg" alt=""></div>
+<div class="frame pv" id="fB"><video muted playsinline preload="auto"></video><img class="still" src="rest_image.jpg" alt=""></div>
+<button type="button" class="sndBtn" id="snd" tabindex="0">소리 켜기</button>
+<script src="expand.js"></script>
+<script src="player.js"></script>
+</body>
+</html>

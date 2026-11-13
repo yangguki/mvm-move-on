@@ -1,117 +1,62 @@
 import {
   BadRequestException,
   Body,
-  ConflictException,
   Controller,
   Get,
-  Headers,
   NotFoundException,
   Param,
   Post,
   Put,
   UseGuards,
 } from "@nestjs/common";
+import { expand, playTotalSec, validateProgram, type Program as SharedProgram } from "@mvn/shared";
 import { AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
 
-const KINDS = new Set(["countdown", "exercise", "rest"]);
-
-type StepInput = {
-  kind?: string;
-  label?: string;
-  subtitle?: string | null;
-  seconds?: number;
-  groupKey?: string | null;
-  groupLabel?: string | null;
-  groupRepeat?: number | null;
+type DraftBody = {
+  items?: unknown;
+  skin?: unknown;
 };
 
-type SaveBody = {
-  name?: string;
-  skinId?: string;
-  steps?: StepInput[];
-};
-
-type StepRow = {
-  id: string;
-  position: number;
-  kind: string;
-  label: string;
-  subtitle: string | null;
-  seconds: number;
-  groupKey: string | null;
-  groupLabel: string | null;
-  groupRepeat: number | null;
-};
-
-function presentStep(step: StepRow) {
-  return {
-    id: step.id,
-    position: step.position,
-    kind: step.kind,
-    label: step.label,
-    subtitle: step.subtitle,
-    seconds: step.seconds,
-    group: step.groupKey
-      ? { key: step.groupKey, label: step.groupLabel, repeat: step.groupRepeat }
-      : null,
-  };
+function asDraft(raw: unknown): { items: SharedProgram["items"]; skin: SharedProgram["skin"] } {
+  try {
+    const checked = validateProgram({
+      id: "draft",
+      name: "tmp",
+      status: "draft",
+      draftUpdatedAt: new Date().toISOString(),
+      publishedVersion: null,
+      ...(typeof raw === "object" && raw ? raw : {}),
+    });
+    return { items: checked.items, skin: checked.skin };
+  } catch (error) {
+    throw new BadRequestException(error instanceof Error ? error.message : "프로그램 draft가 올바르지 않아요");
+  }
 }
 
-function totals(steps: Array<{ kind: string; seconds: number }>) {
-  return {
-    stepCount: steps.length,
-    seconds: steps.reduce((sum, step) => sum + step.seconds, 0),
-    exerciseSeconds: steps.filter((step) => step.kind === "exercise").reduce((sum, step) => sum + step.seconds, 0),
-    restSeconds: steps.filter((step) => step.kind === "rest").reduce((sum, step) => sum + step.seconds, 0),
-  };
-}
-
-function presentProgram(program: {
+function present(row: {
   id: string;
   name: string;
   status: string;
-  lockVersion: number;
-  draftVersion: number;
+  draft: unknown;
+  draftUpdatedAt: Date;
   publishedVersion: number | null;
-  updatedAt: Date;
-  skin: { id: string; name: string; slug: string; tone: string };
-  steps: StepRow[];
-}) {
-  return {
-    id: program.id,
-    name: program.name,
-    status: program.status,
-    lockVersion: program.lockVersion,
-    draftVersion: program.draftVersion,
-    publishedVersion: program.publishedVersion,
-    updatedAt: program.updatedAt,
-    skin: program.skin,
-    totals: totals(program.steps),
-    steps: program.steps.map(presentStep),
+}): SharedProgram & { totals: { seconds: number; stepCount: number } } {
+  const draft = row.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
+  const program: SharedProgram = {
+    id: row.id,
+    name: row.name,
+    status: row.status === "published" ? "published" : "draft",
+    draftUpdatedAt: row.draftUpdatedAt.toISOString(),
+    publishedVersion: row.publishedVersion,
+    skin: draft.skin,
+    items: draft.items,
   };
-}
-
-function normalizeSteps(steps: StepInput[]) {
-  return steps.map((step, index) => {
-    const kind = step.kind ?? "";
-    const label = step.label?.trim() ?? "";
-    if (!KINDS.has(kind)) throw new BadRequestException("단계 종류는 countdown, exercise, rest 중 하나예요");
-    if (!label) throw new BadRequestException("단계 이름이 필요해요");
-    if (!Number.isInteger(step.seconds) || (step.seconds ?? 0) <= 0) {
-      throw new BadRequestException("단계 시간은 1초 이상이어야 해요");
-    }
-    return {
-      position: index + 1,
-      kind,
-      label,
-      subtitle: step.subtitle?.trim() || null,
-      seconds: step.seconds as number,
-      groupKey: step.groupKey?.trim() || null,
-      groupLabel: step.groupLabel?.trim() || null,
-      groupRepeat: step.groupRepeat ?? null,
-    };
-  });
+  const play = expand(program);
+  return {
+    ...program,
+    totals: { seconds: playTotalSec(play), stepCount: play.length },
+  };
 }
 
 @Controller("admin/v1/programs")
@@ -121,110 +66,88 @@ export class ProgramsController {
 
   @Get()
   async list() {
-    const rows = await this.prisma.program.findMany({
-      include: { skin: true, steps: { orderBy: { position: "asc" } } },
-      orderBy: { updatedAt: "desc" },
-    });
-    return {
-      items: rows.map((program) => ({
-        id: program.id,
-        name: program.name,
-        status: program.status,
-        lockVersion: program.lockVersion,
-        draftVersion: program.draftVersion,
-        publishedVersion: program.publishedVersion,
-        totals: totals(program.steps),
-        skin: { id: program.skin.id, name: program.skin.name, slug: program.skin.slug, tone: program.skin.tone },
-      })),
-    };
+    const rows = await this.prisma.program.findMany({ orderBy: { updatedAt: "desc" } });
+    return { items: rows.map(present) };
   }
 
   @Post()
-  async create(@Body() body: { name?: string; skinId?: string }) {
+  async create(@Body() body: { name?: string; draft?: DraftBody }) {
     const name = body.name?.trim() ?? "";
-    if (!name || !body.skinId) throw new BadRequestException("프로그램 이름과 스킨이 필요해요");
-    const skin = await this.prisma.skin.findUnique({ where: { id: body.skinId } });
-    if (!skin) throw new NotFoundException("스킨을 찾을 수 없어요");
-    const program = await this.prisma.program.create({
-      data: { name, skinId: skin.id, status: "draft" },
-      include: { skin: true, steps: { orderBy: { position: "asc" } } },
+    if (!name) throw new BadRequestException("프로그램 이름이 필요해요");
+    const draft = asDraft({
+      name,
+      status: "draft",
+      items: body.draft?.items ?? [{ id: "guide-1", type: "guide", durationSec: 10, label: "시작 카운트다운" }],
+      skin: body.draft?.skin ?? {
+        id: "neon-arcade",
+        options: { pointColor: "#C8F31D", nextLeadSec: 10 },
+      },
     });
-    return presentProgram(program);
+    const row = await this.prisma.program.create({
+      data: { name, status: "draft", draft, draftUpdatedAt: new Date() },
+    });
+    return present(row);
   }
 
   @Get(":id")
   async detail(@Param("id") id: string) {
-    return presentProgram(await this.load(id));
+    return present(await this.load(id));
   }
 
   @Put(":id")
-  async save(@Param("id") id: string, @Headers("if-match") ifMatch: string | undefined, @Body() body: SaveBody) {
+  async save(@Param("id") id: string, @Body() body: { name?: string; draft?: DraftBody; items?: unknown; skin?: unknown }) {
     const current = await this.load(id);
-    this.assertLock(current.lockVersion, ifMatch);
-    const name = body.name?.trim() ?? "";
-    if (!name || !body.skinId || !Array.isArray(body.steps)) {
-      throw new BadRequestException("이름, 스킨, 단계 목록이 필요해요");
-    }
-    const skin = await this.prisma.skin.findUnique({ where: { id: body.skinId } });
-    if (!skin) throw new NotFoundException("스킨을 찾을 수 없어요");
-    const steps = normalizeSteps(body.steps);
-    await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.program.updateMany({
-        where: { id, lockVersion: current.lockVersion },
-        data: {
-          name,
-          skinId: skin.id,
-          status: "draft",
-          draftVersion: { increment: 1 },
-          lockVersion: { increment: 1 },
-        },
-      });
-      if (updated.count !== 1) throw new ConflictException("다른 저장이 먼저 반영됐어요. 다시 불러와 주세요");
-      await tx.programStep.deleteMany({ where: { programId: id } });
-      if (steps.length > 0) await tx.programStep.createMany({ data: steps.map((step) => ({ ...step, programId: id })) });
+    const name = body.name?.trim() || current.name;
+    const incoming = body.draft ?? { items: body.items, skin: body.skin };
+    const draft = asDraft({
+      name,
+      status: "draft",
+      items: incoming.items ?? (current.draft as DraftBody).items,
+      skin: incoming.skin ?? (current.draft as DraftBody).skin,
     });
-    return presentProgram(await this.load(id));
+    const row = await this.prisma.program.update({
+      where: { id },
+      data: {
+        name,
+        status: "draft",
+        draft,
+        draftUpdatedAt: new Date(),
+      },
+    });
+    return present(row);
   }
 
   @Post(":id/publish")
-  async publish(@Param("id") id: string, @Headers("if-match") ifMatch: string | undefined) {
+  async publish(@Param("id") id: string) {
     const current = await this.load(id);
-    this.assertLock(current.lockVersion, ifMatch);
-    if (current.publishedVersion === current.draftVersion) {
-      throw new ConflictException("이 초안은 이미 발행됐어요");
-    }
+    const draft = current.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
+    const nextVersion = (current.publishedVersion ?? 0) + 1;
+    const snapshot = validateProgram({
+      id: current.id,
+      name: current.name,
+      status: "published",
+      draftUpdatedAt: current.draftUpdatedAt.toISOString(),
+      publishedVersion: nextVersion,
+      skin: draft.skin,
+      items: draft.items,
+    });
     await this.prisma.$transaction(async (tx) => {
       await tx.programVersion.create({
         data: {
           programId: id,
-          version: current.draftVersion,
-          name: current.name,
-          skinId: current.skinId,
-          steps: {
-            create: current.steps.map((step) => ({
-              position: step.position,
-              kind: step.kind,
-              label: step.label,
-              subtitle: step.subtitle,
-              seconds: step.seconds,
-              groupKey: step.groupKey,
-              groupLabel: step.groupLabel,
-              groupRepeat: step.groupRepeat,
-            })),
-          },
+          version: nextVersion,
+          snapshot,
         },
       });
-      const updated = await tx.program.updateMany({
-        where: { id, lockVersion: current.lockVersion },
+      await tx.program.update({
+        where: { id },
         data: {
           status: "published",
-          publishedVersion: current.draftVersion,
-          lockVersion: { increment: 1 },
+          publishedVersion: nextVersion,
         },
       });
-      if (updated.count !== 1) throw new ConflictException("다른 저장이 먼저 반영됐어요. 다시 불러와 주세요");
     });
-    return presentProgram(await this.load(id));
+    return present(await this.load(id));
   }
 
   @Get(":id/versions")
@@ -232,34 +155,25 @@ export class ProgramsController {
     await this.load(id);
     const rows = await this.prisma.programVersion.findMany({
       where: { programId: id },
-      include: { skin: true, _count: { select: { steps: true } } },
       orderBy: { version: "desc" },
     });
     return {
-      items: rows.map((version) => ({
-        id: version.id,
-        version: version.version,
-        name: version.name,
-        createdAt: version.createdAt,
-        stepCount: version._count.steps,
-        skin: { id: version.skin.id, name: version.skin.name },
-      })),
+      items: rows.map((version) => {
+        const snap = version.snapshot as SharedProgram;
+        return {
+          id: version.id,
+          version: version.version,
+          name: snap.name,
+          publishedAt: version.publishedAt,
+          stepCount: expand(snap).length,
+          skin: snap.skin,
+        };
+      }),
     };
   }
 
-  private assertLock(lockVersion: number, ifMatch?: string) {
-    const match = ifMatch?.trim().replace(/^W\//, "").replace(/^"|"$/g, "");
-    if (!match) throw new BadRequestException("If-Match 헤더에 lockVersion이 필요해요");
-    if (match !== String(lockVersion)) {
-      throw new ConflictException("다른 저장이 먼저 반영됐어요. 다시 불러와 주세요");
-    }
-  }
-
   private async load(id: string) {
-    const program = await this.prisma.program.findUnique({
-      where: { id },
-      include: { skin: true, steps: { orderBy: { position: "asc" } } },
-    });
+    const program = await this.prisma.program.findUnique({ where: { id } });
     if (!program) throw new NotFoundException("프로그램을 찾을 수 없어요");
     return program;
   }

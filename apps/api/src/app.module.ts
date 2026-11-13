@@ -7,11 +7,23 @@ import { HealthController } from "./health.controller";
 import { HealthService } from "./health.service";
 import { OperationsController } from "./operations.controller";
 import { PrismaService } from "./prisma.service";
+import { PlayerController } from "./player.controller";
 import { ProgramsController } from "./programs.controller";
 import { TokenService } from "./token.service";
+import { VideosController } from "./videos.controller";
 
 @Module({
-  controllers: [HealthController, AuthController, MeController, CatalogController, ProgramsController, AccountsController, OperationsController],
+  controllers: [
+    HealthController,
+    AuthController,
+    MeController,
+    CatalogController,
+    ProgramsController,
+    VideosController,
+    PlayerController,
+    AccountsController,
+    OperationsController,
+  ],
   providers: [HealthService, PrismaService, TokenService, AuthGuard],
 })
 export class AppModule {}

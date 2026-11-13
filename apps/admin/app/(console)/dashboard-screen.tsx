@@ -59,10 +59,15 @@ export function DashboardScreen() {
   }, []);
 
   async function createProgram() {
-    const skins = await api<{ items: Array<{ id: string }> }>("/admin/v1/skins");
     const created = await api<{ id: string }>("/admin/v1/programs", {
       method: "POST",
-      body: JSON.stringify({ name: "새 프로그램", skinId: skins.items[0]?.id }),
+      body: JSON.stringify({
+        name: "새 프로그램",
+        draft: {
+          items: [{ id: "guide-1", type: "guide", durationSec: 10, label: "시작 카운트다운" }],
+          skin: { id: "neon-arcade", options: { pointColor: "#C8F31D", nextLeadSec: 10 } },
+        },
+      }),
     });
     router.push(`/programs?id=${created.id}`);
   }

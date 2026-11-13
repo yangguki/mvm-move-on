@@ -10,6 +10,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@mvn/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       lucide-react:
         specifier: ^1.72.0
         version: 1.72.0(@types/react@19.3.0)(react@19.3.1)
@@ -44,6 +47,9 @@ importers:
       '@mvn/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@mvn/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@nestjs/common':
         specifier: ^11.1.6
         version: 11.2.10(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -85,6 +91,8 @@ importers:
       prisma:
         specifier: 6.18.0
         version: 6.18.0(typescript@5.9.3)
+
+  packages/shared: {}
 
 packages:
 
