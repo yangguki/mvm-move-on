@@ -13,8 +13,20 @@
       options: {
         pointColor: "#C8F31D",
         restImageUrl: "rest_image.jpg",
-        musicUrl: "audio/bgm_gym_loop.ogg",
         nextLeadSec: 10,
+      },
+      music: { id: "demo-m", name: "BGM", url: "audio/bgm_gym_loop.ogg", durationSec: 60 },
+      voicePack: {
+        id: "demo-vp",
+        name: "기본",
+        cues: {
+          countdown5: { id: "c5", name: "5", url: "audio/count_5.mp3", durationSec: 1 },
+          countdown4: { id: "c4", name: "4", url: "audio/count_4.mp3", durationSec: 1 },
+          countdown3: { id: "c3", name: "3", url: "audio/count_3.mp3", durationSec: 1 },
+          countdown2: { id: "c2", name: "2", url: "audio/count_2.mp3", durationSec: 1 },
+          countdown1: { id: "c1", name: "1", url: "audio/count_1.mp3", durationSec: 1 },
+          restStart: { id: "rs", name: "휴식 시작", url: "audio/rest_10.mp3", durationSec: 1 },
+        },
       },
     },
     items: [
@@ -92,6 +104,16 @@
   var nextShown = false;
   var loopActive = null;
   var options = DEMO.skin.options;
+  var musicUrl = (DEMO.skin.music && DEMO.skin.music.url) || "audio/bgm_gym_loop.ogg";
+  var cueUrls = {
+    countdown5: "audio/count_5.mp3",
+    countdown4: "audio/count_4.mp3",
+    countdown3: "audio/count_3.mp3",
+    countdown2: "audio/count_2.mp3",
+    countdown1: "audio/count_1.mp3",
+    restStart: "audio/rest_10.mp3",
+  };
+  var spokenKey = "";
   var videosById = {};
 
   function fit() {
@@ -144,8 +166,8 @@
     return f.querySelector("video");
   }
 
-  function applyOptions(opts) {
-    options = opts || options;
+  function applySkin(skin) {
+    options = (skin && skin.options) || options;
     nextLeadSec = typeof options.nextLeadSec === "number" ? options.nextLeadSec : 10;
     if (options.pointColor) {
       document.documentElement.style.setProperty("--lime", options.pointColor);
@@ -161,8 +183,19 @@
         logo.style.display = "block";
       }
     }
-    if (options.musicUrl && A.el && A.el.bgm) {
-      A.el.bgm.src = options.musicUrl;
+    if (skin && skin.music && skin.music.url) musicUrl = skin.music.url;
+    else if (options.musicUrl) musicUrl = options.musicUrl;
+    if (skin && skin.voicePack && skin.voicePack.cues) {
+      var cues = skin.voicePack.cues;
+      var keys = ["countdown5", "countdown4", "countdown3", "countdown2", "countdown1", "restStart"];
+      for (var k = 0; k < keys.length; k++) {
+        var key = keys[k];
+        if (cues[key] && cues[key].url) cueUrls[key] = cues[key].url;
+      }
+    }
+    if (A.el && A.el.bgm && musicUrl) {
+      A.el.bgm.src = musicUrl;
+      if (A.on) A.el.bgm.play().catch(function () {});
     }
   }
 
@@ -280,6 +313,7 @@
     stopLoop();
     idx = i;
     start = now || performance.now();
+    spokenKey = "";
     var item = playItems[idx];
     if (!item) return;
     setHud(item);
@@ -302,6 +336,7 @@
         safePlay(pv);
       }
     }
+    if (item.type === "rest") playCue("restStart");
     startBar(item.durationSec * 1000);
   }
 
@@ -329,6 +364,14 @@
     var left = Math.max(0, Math.ceil((totalMs - el) / 1000));
     $("t").textContent = clock(left);
     if (item.type === "rest") $("rcnt").textContent = String(left);
+
+    if ((item.type === "exercise" || item.type === "rest") && left >= 1 && left <= 5) {
+      var key = idx + ":c" + left;
+      if (spokenKey !== key) {
+        spokenKey = key;
+        playCue("countdown" + left);
+      }
+    }
 
     if (item.type === "exercise" && item.next) {
       showNext(totalMs - el <= nextLeadSec * 1000);
@@ -370,24 +413,39 @@
       : { program: program, playItems: window.mvnExpand(program, collectVideos(program)) };
     var prog = payload.program || program;
     var items = payload.playItems || window.mvnExpand(prog, collectVideos(prog));
-    if (prog.skin && prog.skin.options) applyOptions(prog.skin.options);
+    if (prog.skin) applySkin(prog.skin);
     playItems = items;
     beginItem(0, performance.now());
   }
 
-  // audio (element mode — CDN 없음)
+  // audio: 첫 사용자 입력 후 시작. 실패해도 영상은 계속.
   var A = { on: false, el: {} };
+  function playCue(name) {
+    if (!A.on) return;
+    var url = cueUrls[name];
+    if (!url) return;
+    try {
+      var a = new Audio(url);
+      a.volume = 0.9;
+      a.play().catch(function () {});
+    } catch (e) {}
+  }
   function enableAudio() {
     if (A.on) return;
     A.on = true;
     $("snd").classList.add("hide");
-    var bgm = new Audio(options.musicUrl || "audio/bgm_gym_loop.ogg");
-    bgm.loop = true;
-    bgm.volume = 0.55;
-    A.el.bgm = bgm;
-    bgm.play().catch(function () {});
+    try {
+      var bgm = new Audio(musicUrl || "audio/bgm_gym_loop.ogg");
+      bgm.loop = true;
+      bgm.volume = 0.55;
+      A.el.bgm = bgm;
+      bgm.play().catch(function () {});
+    } catch (e) {}
   }
   $("snd").addEventListener("click", enableAudio);
+  addEventListener("pointerdown", function () {
+    if (!A.on) enableAudio();
+  }, { once: true });
   addEventListener("keydown", function (e) {
     if (!A.on && (e.key === "Enter" || e.keyCode === 13)) {
       e.preventDefault();

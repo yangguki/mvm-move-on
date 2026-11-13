@@ -4,13 +4,35 @@ export type SkinOptions = {
   pointColor: string;
   logoUrl?: string;
   restImageUrl?: string;
-  musicUrl?: string;
+  /** 배경음악 AudioAsset id. 없으면 기본 음악 */
+  musicId?: string;
+  /** VoicePack id. 없으면 기본 음성 팩 */
+  voicePackId?: string;
   nextLeadSec: number;
+};
+
+export type ResolvedAudioRef = {
+  id: string;
+  name: string;
+  url: string;
+  durationSec: number;
+  mimeType?: string;
+};
+
+export type VoiceCueKey = "countdown5" | "countdown4" | "countdown3" | "countdown2" | "countdown1" | "restStart";
+
+export type ResolvedVoicePack = {
+  id: string;
+  name: string;
+  cues: Record<VoiceCueKey, ResolvedAudioRef>;
 };
 
 export type ProgramSkin = {
   id: "neon-arcade";
   options: SkinOptions;
+  /** 게시 스냅샷에만 url까지 풀려 들어갑니다 */
+  music?: ResolvedAudioRef;
+  voicePack?: ResolvedVoicePack;
 };
 
 export type StepType = "exercise" | "rest" | "guide";

@@ -124,6 +124,41 @@ async function main() {
     },
   });
 
+  await prisma.voicePack.deleteMany();
+  await prisma.audioAsset.deleteMany();
+
+  const music = await prisma.audioAsset.create({
+    data: {
+      name: "기본 배경음악",
+      kind: "music",
+      url: "/skins/neon-arcade/audio/bgm_gym_loop.ogg",
+      durationSec: 60,
+      mimeType: "audio/ogg",
+    },
+  });
+  const cueFiles = [
+    ["countdown5", "카운트 5", "/skins/neon-arcade/audio/count_5.mp3"],
+    ["countdown4", "카운트 4", "/skins/neon-arcade/audio/count_4.mp3"],
+    ["countdown3", "카운트 3", "/skins/neon-arcade/audio/count_3.mp3"],
+    ["countdown2", "카운트 2", "/skins/neon-arcade/audio/count_2.mp3"],
+    ["countdown1", "카운트 1", "/skins/neon-arcade/audio/count_1.mp3"],
+    ["restStart", "휴식 시작", "/skins/neon-arcade/audio/rest_10.mp3"],
+  ];
+  const cueIds = {};
+  for (const [key, name, url] of cueFiles) {
+    const row = await prisma.audioAsset.create({
+      data: { name, kind: "voice", url, durationSec: 1, mimeType: "audio/mpeg" },
+    });
+    cueIds[key] = row.id;
+  }
+  const voicePack = await prisma.voicePack.create({
+    data: {
+      name: "기본 음성 팩",
+      isDefault: true,
+      cues: cueIds,
+    },
+  });
+
   const draft = {
     items: [
       { id: "guide-1", type: "guide", durationSec: 10, label: "시작 카운트다운", text: "카운트다운" },
@@ -145,7 +180,8 @@ async function main() {
       options: {
         pointColor: "#C8F31D",
         restImageUrl: "/skins/neon-arcade/rest_image.jpg",
-        musicUrl: "/skins/neon-arcade/audio/bgm_gym_loop.ogg",
+        musicId: music.id,
+        voicePackId: voicePack.id,
         nextLeadSec: 10,
       },
     },
@@ -153,13 +189,46 @@ async function main() {
 
   await prisma.programVersion.deleteMany();
   await prisma.program.deleteMany();
+  const resolveCue = (key) => {
+    const id = cueIds[key];
+    const file = cueFiles.find((row) => row[0] === key);
+    return {
+      id,
+      name: file[1],
+      url: file[2],
+      durationSec: 1,
+      mimeType: "audio/mpeg",
+    };
+  };
+  const snapshotSkin = {
+    ...draft.skin,
+    music: {
+      id: music.id,
+      name: music.name,
+      url: music.url,
+      durationSec: music.durationSec,
+      mimeType: music.mimeType,
+    },
+    voicePack: {
+      id: voicePack.id,
+      name: voicePack.name,
+      cues: {
+        countdown5: resolveCue("countdown5"),
+        countdown4: resolveCue("countdown4"),
+        countdown3: resolveCue("countdown3"),
+        countdown2: resolveCue("countdown2"),
+        countdown1: resolveCue("countdown1"),
+        restStart: resolveCue("restStart"),
+      },
+    },
+  };
   const snapshot = {
     id: "seed",
     name: "금 머슬핏 A",
     status: "published",
     draftUpdatedAt: new Date().toISOString(),
     publishedVersion: 1,
-    skin: draft.skin,
+    skin: snapshotSkin,
     items: draft.items,
   };
   const program = await prisma.program.create({
@@ -178,7 +247,7 @@ async function main() {
     },
   });
 
-  console.log(`seeded account, stores, devices, videos, program ${program.name}`);
+  console.log(`seeded account, stores, devices, videos, audio, voice-pack, program ${program.name}`);
 }
 
 main()

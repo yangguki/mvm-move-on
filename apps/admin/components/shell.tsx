@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   ListVideo,
   Menu,
+  Mic2,
   Monitor,
   Palette,
   Search,
@@ -41,6 +42,7 @@ function nav(counts: { offline: number; stores: number; programs: number }): Nav
     { label: "콘텐츠" },
     { href: "/programs", label: "프로그램", icon: ListVideo, meta: String(counts.programs) },
     { href: "/videos", label: "운동 영상", icon: Clapperboard },
+    { href: "/audio", label: "오디오", icon: Mic2 },
     { href: "/skins", label: "스킨", icon: Palette },
     { label: "설정" },
     { href: "/accounts", label: "계정 · 권한", icon: Users },
@@ -54,6 +56,7 @@ const RAIL: Array<NavLink | "sep"> = [
   "sep",
   { href: "/programs", label: "프로그램", icon: ListVideo },
   { href: "/videos", label: "운동 영상", icon: Clapperboard },
+  { href: "/audio", label: "오디오", icon: Mic2 },
   { href: "/skins", label: "스킨", icon: Palette },
   "sep",
   { href: "/accounts", label: "계정 · 권한", icon: Users },
@@ -226,7 +229,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <nav className="tabbar" aria-label="모바일 메뉴">
         {tabs(counts.offline).map((tab) => {
           const Icon = tab.icon;
-          const on = tab.href === "/stores" ? ["/stores", "/videos", "/accounts"].some((href) => isOn(pathname, href)) : isOn(pathname, tab.href);
+          const on = tab.href === "/stores" ? ["/stores", "/videos", "/audio", "/accounts"].some((href) => isOn(pathname, href)) : isOn(pathname, tab.href);
           return (
             <Link key={tab.label} href={tab.href} className={on ? "on" : undefined} aria-current={on ? "page" : undefined}>
               <Icon className="i" aria-hidden />

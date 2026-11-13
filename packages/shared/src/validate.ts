@@ -1,4 +1,5 @@
-import type { Group, Program, ProgramItem, Step, Video } from "./program";
+import type { Group, Program, ProgramItem, ResolvedVoicePack, Step, Video } from "./program";
+import { VOICE_CUE_KEYS } from "./audio";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -69,14 +70,44 @@ export function validateProgram(raw: unknown): Program {
   };
   if (raw.skin.options.logoUrl != null) options.logoUrl = asString(raw.skin.options.logoUrl, "skin.options.logoUrl");
   if (raw.skin.options.restImageUrl != null) options.restImageUrl = asString(raw.skin.options.restImageUrl, "skin.options.restImageUrl");
-  if (raw.skin.options.musicUrl != null) options.musicUrl = asString(raw.skin.options.musicUrl, "skin.options.musicUrl");
+  if (raw.skin.options.musicId != null) options.musicId = asString(raw.skin.options.musicId, "skin.options.musicId");
+  if (raw.skin.options.voicePackId != null) options.voicePackId = asString(raw.skin.options.voicePackId, "skin.options.voicePackId");
+  const skin: Program["skin"] = { id: "neon-arcade", options };
+  if (isRecord(raw.skin.music) && typeof raw.skin.music.url === "string") {
+    skin.music = {
+      id: asString(raw.skin.music.id, "skin.music.id"),
+      name: asString(raw.skin.music.name, "skin.music.name"),
+      url: asString(raw.skin.music.url, "skin.music.url"),
+      durationSec: asNumber(raw.skin.music.durationSec, "skin.music.durationSec"),
+      mimeType: typeof raw.skin.music.mimeType === "string" ? raw.skin.music.mimeType : undefined,
+    };
+  }
+  if (isRecord(raw.skin.voicePack) && isRecord(raw.skin.voicePack.cues)) {
+    const cues = raw.skin.voicePack.cues;
+    const resolved: ResolvedVoicePack = {
+      id: asString(raw.skin.voicePack.id, "skin.voicePack.id"),
+      name: asString(raw.skin.voicePack.name, "skin.voicePack.name"),
+      cues: {} as ResolvedVoicePack["cues"],
+    };
+    for (const key of VOICE_CUE_KEYS) {
+      const cue = cues[key];
+      if (!isRecord(cue)) throw new Error(`skin.voicePack.cues.${key}가 필요해요`);
+      resolved.cues[key] = {
+        id: asString(cue.id, `skin.voicePack.cues.${key}.id`),
+        name: asString(cue.name ?? key, `skin.voicePack.cues.${key}.name`),
+        url: asString(cue.url, `skin.voicePack.cues.${key}.url`),
+        durationSec: asNumber(cue.durationSec ?? 1, `skin.voicePack.cues.${key}.durationSec`),
+      };
+    }
+    skin.voicePack = resolved;
+  }
   return {
     id: asString(raw.id ?? "draft", "id"),
     name: asString(raw.name, "name"),
     status,
     draftUpdatedAt: typeof raw.draftUpdatedAt === "string" ? raw.draftUpdatedAt : new Date().toISOString(),
     publishedVersion: raw.publishedVersion == null ? null : asNumber(raw.publishedVersion, "publishedVersion"),
-    skin: { id: "neon-arcade", options },
+    skin,
     items: raw.items.map((item, index) => validateItem(item, `items[${index}]`)),
   };
 }

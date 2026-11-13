@@ -103,6 +103,28 @@ model Video {
   @@map("videos")
 }
 
+model AudioAsset {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  kind        String
+  url         String
+  durationSec Int      @map("duration_sec")
+  mimeType    String   @map("mime_type")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("audio_assets")
+}
+
+model VoicePack {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  isDefault Boolean  @default(false) @map("is_default")
+  cues      Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("voice_packs")
+}
+
 model Program {
   id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name             String

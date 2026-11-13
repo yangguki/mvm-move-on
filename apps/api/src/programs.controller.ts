@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { expand, playTotalSec, validateProgram, type Program as SharedProgram } from "@mvn/shared";
+import { resolveProgramSkin } from "./audio-resolve";
 import { AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
 
@@ -122,13 +123,14 @@ export class ProgramsController {
     const current = await this.load(id);
     const draft = current.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
     const nextVersion = (current.publishedVersion ?? 0) + 1;
+    const skin = await resolveProgramSkin(this.prisma, draft.skin);
     const snapshot = validateProgram({
       id: current.id,
       name: current.name,
       status: "published",
       draftUpdatedAt: current.draftUpdatedAt.toISOString(),
       publishedVersion: nextVersion,
-      skin: draft.skin,
+      skin,
       items: draft.items,
     });
     await this.prisma.$transaction(async (tx) => {

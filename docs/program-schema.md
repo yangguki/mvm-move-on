@@ -23,11 +23,23 @@
     pointColor: string,
     logoUrl?: string,
     restImageUrl?: string,
-    musicUrl?: string,
-    nextLeadSec: number // 기본 10. 종료 N초 전 NEXT 노출
+    musicId?: string,      // AudioAsset id. 없으면 기본 배경음악
+    voicePackId?: string,  // VoicePack id. 없으면 기본 음성 팩
+    nextLeadSec: number    // 기본 10. 종료 N초 전 NEXT 노출
+  },
+  // 게시 스냅샷에만 url까지 풀려 들어갑니다 (정책 B: 재게시 때만 반영)
+  music?: { id, name, url, durationSec, mimeType? },
+  voicePack?: {
+    id, name,
+    cues: {
+      countdown5, countdown4, countdown3, countdown2, countdown1, restStart
+      // 각 cue: { id, name, url, durationSec }
+    }
   }
 }
 ```
+
+초안(`draft`)은 `musicId` / `voicePackId`만 보관합니다. 게시 시 API가 선택한(또는 기본) 오디오를 url까지 풀어 `skin.music` · `skin.voicePack`에 넣습니다. 라이브러리에서 파일을 바꿔도 이미 게시된 버전은 그대로이고, 재게시해야 반영됩니다.
 
 ## Step
 
@@ -62,6 +74,26 @@
 | `height` | number |
 
 영상은 원본 1회 클립입니다. 플레이어가 두 버퍼를 번갈아 쓰며 `durationSec` 동안 반복합니다.
+
+## AudioAsset / VoicePack
+
+| AudioAsset | 타입 |
+| --- | --- |
+| `id` | string |
+| `name` | string |
+| `kind` | `'music' \| 'voice'` |
+| `url` | string |
+| `durationSec` | number |
+| `mimeType` | string (업로드는 MP3/M4A) |
+
+| VoicePack | 타입 |
+| --- | --- |
+| `id` | string |
+| `name` | string |
+| `isDefault` | boolean |
+| `cues` | `{ countdown5..1, restStart: audioAssetId }` |
+
+관리자 API: `GET/POST/PATCH/DELETE /admin/v1/audio`, `/admin/v1/voice-packs`.
 
 ## ProgramVersion
 

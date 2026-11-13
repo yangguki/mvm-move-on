@@ -40,6 +40,8 @@ type Step = {
 };
 type Program = SharedProgram & { totals?: { seconds: number; stepCount: number } };
 type VideoItem = { id: string; name: string; url: string; durationSec: number; thumbnailUrl: string; width: number; height: number };
+type AudioItem = { id: string; name: string; kind: string; url: string; durationSec: number; mimeType: string };
+type VoicePackItem = { id: string; name: string; isDefault: boolean };
 type VersionItem = { id: string; version: number; name: string; publishedAt: string; stepCount: number };
 
 type Block =
@@ -215,9 +217,10 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     pointColor: "#C8F31D",
     nextLeadSec: 10,
     restImageUrl: "/skins/neon-arcade/rest_image.jpg",
-    musicUrl: "/skins/neon-arcade/audio/bgm_gym_loop.ogg",
   });
   const [videos, setVideos] = useState<VideoItem[]>([]);
+  const [audioItems, setAudioItems] = useState<AudioItem[]>([]);
+  const [voicePacks, setVoicePacks] = useState<VoicePackItem[]>([]);
   const [steps, setSteps] = useState<Step[]>([]);
   const [selected, setSelected] = useState(0);
   const [published, setPublished] = useState<number | null>(null);
@@ -259,11 +262,15 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [list, videoList] = await Promise.all([
+      const [list, videoList, audioList, packList] = await Promise.all([
         api<{ items: Program[] }>("/admin/v1/programs"),
         api<{ items: VideoItem[] }>("/admin/v1/videos"),
+        api<{ items: AudioItem[] }>("/admin/v1/audio"),
+        api<{ items: VoicePackItem[] }>("/admin/v1/voice-packs"),
       ]);
       setVideos(videoList.items);
+      setAudioItems(audioList.items);
+      setVoicePacks(packList.items);
       const id = initialId || list.items.find((item) => item.name.includes("머슬핏"))?.id || list.items[0]?.id;
       if (!id) {
         setEmpty(true);
@@ -944,6 +951,52 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                 {steps.length ? `${selected + 1} / ${steps.length}` : "0 / 0"}
                 {current?.groupLabel ? ` · ${current.groupLabel}` : ""}
               </small>
+            </div>
+          </div>
+          <div className="insp-body" style={{ borderBottom: "1px solid var(--border, #e5e7eb)", paddingBottom: 12, marginBottom: 4 }}>
+            <div className="field">
+              <span className="label">배경음악</span>
+              <select
+                className="input"
+                value={skinOptions.musicId ?? ""}
+                onChange={(event) =>
+                  setSkinOptions((prev) => ({
+                    ...prev,
+                    musicId: event.target.value || undefined,
+                  }))
+                }
+              >
+                <option value="">기본 음악</option>
+                {audioItems
+                  .filter((item) => item.kind === "music")
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="field">
+              <span className="label">음성 팩</span>
+              <select
+                className="input"
+                value={skinOptions.voicePackId ?? ""}
+                onChange={(event) =>
+                  setSkinOptions((prev) => ({
+                    ...prev,
+                    voicePackId: event.target.value || undefined,
+                  }))
+                }
+              >
+                <option value="">기본 음성 팩</option>
+                {voicePacks.map((pack) => (
+                  <option key={pack.id} value={pack.id}>
+                    {pack.name}
+                    {pack.isDefault ? " (기본)" : ""}
+                  </option>
+                ))}
+              </select>
+              <small>게시에 url이 스냅샷에 풀립니다</small>
             </div>
           </div>
           {current ? (

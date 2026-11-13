@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { expand, playTotalSec } from "../src/program.ts";
+import { resolveSkinAudio, withResolvedSkinAudio } from "../src/audio.ts";
 
 describe("expand", () => {
   it("그룹 x3 예시: 총 150초, 9개 항목, NEXT 라벨", () => {
@@ -47,5 +48,72 @@ describe("expand", () => {
 
     assert.equal(play[7].next, undefined);
     assert.equal(play[8].next, undefined);
+  });
+});
+
+describe("snapshot audio", () => {
+  it("게시 스냅샷에 music·voicePack url을 풀어 넣는다", () => {
+    const music = {
+      id: "m1",
+      name: "BGM",
+      url: "/media/audio/bgm.mp3",
+      durationSec: 60,
+      mimeType: "audio/mpeg",
+    };
+    const cue = (id, name) => ({
+      id,
+      name,
+      url: `/media/audio/${id}.mp3`,
+      durationSec: 1,
+      mimeType: "audio/mpeg",
+    });
+    const voicePack = {
+      id: "vp1",
+      name: "기본",
+      cues: {
+        countdown5: cue("c5", "5"),
+        countdown4: cue("c4", "4"),
+        countdown3: cue("c3", "3"),
+        countdown2: cue("c2", "2"),
+        countdown1: cue("c1", "1"),
+        restStart: cue("rs", "휴식 시작"),
+      },
+    };
+    const lookup = {
+      musicById: new Map([[music.id, music]]),
+      defaultMusic: music,
+      voicePackById: new Map([[voicePack.id, voicePack]]),
+      defaultVoicePack: voicePack,
+    };
+    const skin = resolveSkinAudio(
+      {
+        id: "neon-arcade",
+        options: { pointColor: "#C8F31D", nextLeadSec: 10, musicId: "m1", voicePackId: "vp1" },
+      },
+      lookup,
+    );
+    assert.equal(skin.music?.url, "/media/audio/bgm.mp3");
+    assert.equal(skin.voicePack?.cues.countdown3.url, "/media/audio/c3.mp3");
+    assert.equal(skin.voicePack?.cues.restStart.url, "/media/audio/rs.mp3");
+
+    const program = withResolvedSkinAudio(
+      {
+        id: "p1",
+        name: "테스트",
+        status: "published",
+        draftUpdatedAt: "2026-11-13T00:00:00.000Z",
+        publishedVersion: 1,
+        skin: {
+          id: "neon-arcade",
+          options: { pointColor: "#C8F31D", nextLeadSec: 10 },
+        },
+        items: [],
+      },
+      lookup,
+    );
+    assert.equal(program.skin.options.musicId, "m1");
+    assert.equal(program.skin.options.voicePackId, "vp1");
+    assert.ok(program.skin.music?.url);
+    assert.ok(program.skin.voicePack?.cues.countdown1.url);
   });
 });
