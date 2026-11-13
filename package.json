@@ -1,0 +1,17 @@
+{
+  "name": "mvn-player",
+  "private": true,
+  "packageManager": "pnpm@10.20.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @mvn/api --filter @mvn/admin dev",
+    "dev:api": "pnpm --filter @mvn/api dev",
+    "dev:admin": "pnpm --filter @mvn/admin dev",
+    "db:generate": "pnpm --filter @mvn/db generate",
+    "db:migrate": "pnpm --filter @mvn/db migrate",
+    "db:seed": "node packages/db/prisma/seed.js",
+    "postinstall": "pnpm db:generate"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@prisma/client", "@prisma/engines", "prisma"]
+  }
+}

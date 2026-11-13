@@ -1,0 +1,2 @@
+# This migration is applied by `prisma migrate deploy`.
+provider = "postgresql"

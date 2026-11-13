@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountRole {
+  hq_admin
+  store_admin
+
+  @@map("account_role")
+}
+
+enum AccountStatus {
+  invited
+  active
+  disabled
+
+  @@map("account_status")
+}
+
+model Account {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  displayName  String?       @map("display_name")
+  role         AccountRole
+  status       AccountStatus @default(invited)
+  tokenVersion Int           @default(0) @map("token_version")
+  lastLoginAt  DateTime?     @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  stores       AccountStore[]
+
+  @@map("accounts")
+}
+
+model Store {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  code      String   @unique
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  devices   Device[]
+  accounts  AccountStore[]
+  pairings  PairingSession[]
+
+  @@map("stores")
+}
+
+model Skin {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug      String    @unique
+  name      String
+  tone      String
+  isSystem  Boolean   @default(false) @map("is_system")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  devices   Device[]
+  programs  Program[]
+  versions  ProgramVersion[]
+
+  @@map("skins")
+}
+
+model Device {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storeId     String   @map("store_id") @db.Uuid
+  skinId      String   @map("skin_id") @db.Uuid
+  name        String
+  code        String   @unique
+  status      String
+  statusLabel String   @map("status_label")
+  playing     String?
+  progress    Int?
+  appVersion  String   @map("app_version")
+  versionWarn Boolean  @default(false) @map("version_warn")
+  seenLabel   String   @map("seen_label")
+  seenAlert   Boolean  @default(false) @map("seen_alert")
+  guide         Boolean  @default(false)
+  offline       Boolean  @default(false)
+  videoLoopMode String   @default("ab") @map("video_loop_mode")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  store       Store    @relation(fields: [storeId], references: [id])
+  skin        Skin     @relation(fields: [skinId], references: [id])
+
+  @@map("devices")
+}
+
+model Program {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  skinId             String           @map("skin_id") @db.Uuid
+  status             String
+  lockVersion        Int              @default(1) @map("lock_version")
+  draftVersion       Int              @default(1) @map("draft_version")
+  publishedVersion   Int?             @map("published_version")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  skin               Skin             @relation(fields: [skinId], references: [id])
+  steps              ProgramStep[]
+  versions           ProgramVersion[]
+
+  @@map("programs")
+}
+
+model ProgramStep {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId   String  @map("program_id") @db.Uuid
+  position    Int
+  kind        String
+  label       String
+  subtitle    String?
+  seconds     Int
+  groupKey    String? @map("group_key")
+  groupLabel  String? @map("group_label")
+  groupRepeat Int?    @map("group_repeat")
+  program     Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, position])
+  @@map("program_steps")
+}
+
+model ProgramVersion {
+  id        String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId String               @map("program_id") @db.Uuid
+  version   Int
+  name      String
+  skinId    String               @map("skin_id") @db.Uuid
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  program   Program              @relation(fields: [programId], references: [id], onDelete: Cascade)
+  skin      Skin                 @relation(fields: [skinId], references: [id])
+  steps     ProgramVersionStep[]
+
+  @@unique([programId, version])
+  @@map("program_versions")
+}
+
+model ProgramVersionStep {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  versionId   String         @map("version_id") @db.Uuid
+  position    Int
+  kind        String
+  label       String
+  subtitle    String?
+  seconds     Int
+  groupKey    String?        @map("group_key")
+  groupLabel  String?        @map("group_label")
+  groupRepeat Int?           @map("group_repeat")
+  version     ProgramVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, position])
+  @@map("program_version_steps")
+}
+
+model AccountStore {
+  accountId String  @map("account_id") @db.Uuid
+  storeId   String  @map("store_id") @db.Uuid
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  store     Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, storeId])
+  @@map("account_stores")
+}
+
+model PairingSession {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storeId    String    @map("store_id") @db.Uuid
+  code       String    @unique
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  store      Store     @relation(fields: [storeId], references: [id])
+
+  @@map("pairing_sessions")
+}
