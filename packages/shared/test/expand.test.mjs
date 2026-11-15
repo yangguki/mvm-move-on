@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { expand, playTotalSec } from "../src/program.ts";
 import { resolveSkinAudio, withResolvedSkinAudio } from "../src/audio.ts";
+import { validateProgram } from "../src/validate.ts";
 
 describe("expand", () => {
   it("그룹 x3 예시: 총 150초, 9개 항목, NEXT 라벨", () => {
@@ -80,6 +81,28 @@ describe("expand", () => {
     assert.equal(play[0].video?.url, "/skins/neon-arcade/mvn_shoulder_press.mp4");
     assert.equal(play[0].video?.name, "덤벨 숄더 프레스");
     assert.equal(play[0].label, "덤벨 숄더 프레스");
+  });
+});
+
+describe("validateProgram", () => {
+  it("그룹 안 그룹(중첩)을 금지한다", () => {
+    const nested = {
+      id: "nested-test",
+      name: "중첩 테스트",
+      status: "draft",
+      skin: { id: "neon-arcade", options: { pointColor: "#C8F31D", nextLeadSec: 10 } },
+      items: [
+        {
+          id: "g1",
+          type: "group",
+          repeat: 2,
+          steps: [
+            { id: "g2", type: "group", repeat: 2, steps: [{ id: "s1", type: "exercise", durationSec: 20 }] },
+          ],
+        },
+      ],
+    };
+    assert.throws(() => validateProgram(nested), /그룹을 중첩할 수 없어요/);
   });
 });
 

@@ -3,6 +3,8 @@ import { AccountsController } from "./accounts.controller";
 import { AuthController, MeController } from "./auth.controller";
 import { AuthGuard } from "./auth.guard";
 import { CatalogController } from "./catalog.controller";
+import { DeviceAuthGuard } from "./device-auth.guard";
+import { DeviceTokenService } from "./device-token.service";
 import { HealthController } from "./health.controller";
 import { HealthService } from "./health.service";
 import { OperationsController } from "./operations.controller";
@@ -28,6 +30,6 @@ import { VoicePacksController } from "./voice-packs.controller";
     AccountsController,
     OperationsController,
   ],
-  providers: [HealthService, PrismaService, TokenService, AuthGuard],
+  providers: [HealthService, PrismaService, TokenService, AuthGuard, DeviceTokenService, DeviceAuthGuard],
 })
 export class AppModule {}

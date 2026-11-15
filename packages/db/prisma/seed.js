@@ -10,7 +10,7 @@ function hashPassword(password) {
 }
 
 const skins = [
-  { slug: "neon", name: "네온 아케이드", tone: "linear-gradient(135deg,#00f0ff,#ff2bd6)", isSystem: true },
+  { slug: "neon-arcade", name: "네온 아케이드", tone: "linear-gradient(135deg,#00f0ff,#ff2bd6)", isSystem: true },
   { slug: "iron", name: "아이언 짐", tone: "linear-gradient(135deg,#3b3f45,#9aa0a6)", isSystem: true },
   { slug: "live", name: "라이브 중계", tone: "linear-gradient(135deg,#e11d2e,#1d4ed8)", isSystem: true },
   { slug: "power", name: "파워 에너지", tone: "linear-gradient(135deg,#ff7a00,#ffd400)", isSystem: true },
@@ -28,16 +28,16 @@ const stores = [
 ];
 
 const devices = [
-  { code: "TV-CX-01", name: "iPT존 메인 TV", store: "CX", skin: "neon", status: "ok", statusLabel: "재생 중", playing: "금 머슬핏 A", progress: 81, appVersion: "1.4.2", seenLabel: "방금" },
-  { code: "TV-CX-02", name: "iPT존 서브 TV", store: "CX", skin: "neon", status: "ok", statusLabel: "재생 중", playing: "금 머슬핏 A", progress: 81, appVersion: "1.4.2", seenLabel: "방금" },
+  { code: "TV-CX-01", name: "iPT존 메인 TV", store: "CX", skin: "neon-arcade", status: "ok", statusLabel: "재생 중", playing: "금 머슬핏 A", progress: 81, appVersion: "1.4.2", seenLabel: "방금" },
+  { code: "TV-CX-02", name: "iPT존 서브 TV", store: "CX", skin: "neon-arcade", status: "ok", statusLabel: "재생 중", playing: "금 머슬핏 A", progress: 81, appVersion: "1.4.2", seenLabel: "방금" },
   { code: "TV-BS-01", name: "iPT존 메인 TV", store: "BS", skin: "iron", status: "err", statusLabel: "오프라인", playing: null, appVersion: "1.4.1", versionWarn: true, seenLabel: "42분 전", seenAlert: true, guide: true, offline: true },
   { code: "TV-BS-03", name: "머신존 TV 2", store: "BS", skin: "iron", status: "err", statusLabel: "오프라인", playing: null, appVersion: "1.4.1", versionWarn: true, seenLabel: "38분 전", seenAlert: true, guide: true, offline: true },
   { code: "TV-WJ-01", name: "iPT존 메인 TV", store: "WJ", skin: "live", status: "ok", statusLabel: "재생 중", playing: "금 머슬핏 A", progress: 79, appVersion: "1.4.2", seenLabel: "방금" },
   { code: "TV-SB-01", name: "iPT존 메인 TV", store: "SB", skin: "power", status: "neutral", statusLabel: "대기", playing: "16:00 머슬핏 B", appVersion: "1.4.2", seenLabel: "12초 전" },
   { code: "TV-SB-02", name: "머신존 TV 1", store: "SB", skin: "power", status: "info", statusLabel: "업데이트 중", playing: "앱 1.4.2 받는 중 · 64%", appVersion: "1.3.9", versionWarn: true, seenLabel: "1분 전" },
   { code: "TV-PC-01", name: "iPT존 메인 TV", store: "PC", skin: "wod", status: "ok", statusLabel: "재생 중", playing: "금 머슬핏 A", progress: 80, appVersion: "1.4.2", seenLabel: "방금" },
-  { code: "TV-GY-01", name: "iPT존 메인 TV", store: "GY", skin: "neon", status: "neutral", statusLabel: "대기", playing: "16:00 머슬핏 B", appVersion: "1.4.2", seenLabel: "8초 전" },
-  { code: "TV-SS-01", name: "iPT존 메인 TV", store: "SS", skin: "neon", status: "err", statusLabel: "오프라인", playing: null, appVersion: "1.4.2", seenLabel: "3시간 전", seenAlert: true, guide: true, offline: true },
+  { code: "TV-GY-01", name: "iPT존 메인 TV", store: "GY", skin: "neon-arcade", status: "neutral", statusLabel: "대기", playing: "16:00 머슬핏 B", appVersion: "1.4.2", seenLabel: "8초 전" },
+  { code: "TV-SS-01", name: "iPT존 메인 TV", store: "SS", skin: "neon-arcade", status: "err", statusLabel: "오프라인", playing: null, appVersion: "1.4.2", seenLabel: "3시간 전", seenAlert: true, guide: true, offline: true },
 ];
 
 async function main() {

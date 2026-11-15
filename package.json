@@ -3,9 +3,10 @@
   "private": true,
   "packageManager": "pnpm@10.20.0",
   "scripts": {
-    "dev": "pnpm --parallel --filter @mvn/api --filter @mvn/admin dev",
+    "dev": "pnpm --parallel --filter @mvn/api --filter @mvn/admin --filter @mvn/player dev",
     "dev:api": "pnpm --filter @mvn/api dev",
     "dev:admin": "pnpm --filter @mvn/admin dev",
+    "dev:player": "pnpm --filter @mvn/player dev",
     "db:generate": "pnpm --filter @mvn/db generate",
     "db:migrate": "pnpm --filter @mvn/db migrate",
     "db:seed": "node packages/db/prisma/seed.js",

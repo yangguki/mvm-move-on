@@ -1036,10 +1036,14 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                           value={current.videoId ?? ""}
                           onChange={(event) => {
                             const video = videos.find((item) => item.id === event.target.value);
-                            update(selected, {
+                            const patch: Partial<Step> = {
                               videoId: event.target.value || null,
                               label: current.label || video?.name || "새 운동",
-                            });
+                            };
+                            if (video && !current.seconds) {
+                              patch.seconds = video.durationSec;
+                            }
+                            update(selected, patch);
                           }}
                         >
                           <option value="">영상 선택</option>

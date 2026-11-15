@@ -39,6 +39,12 @@ function validateGroup(raw: unknown, path: string): Group {
   const repeat = asNumber(raw.repeat, `${path}.repeat`);
   if (!Number.isInteger(repeat) || repeat < 2) throw new Error(`${path}.repeat는 2 이상이에요`);
   if (!Array.isArray(raw.steps) || raw.steps.length === 0) throw new Error(`${path}.steps가 비어 있어요`);
+  for (let i = 0; i < raw.steps.length; i++) {
+    const step = raw.steps[i];
+    if (isRecord(step) && step.type === "group") {
+      throw new Error(`${path}.steps[${i}]에 그룹을 중첩할 수 없어요`);
+    }
+  }
   return {
     id: asString(raw.id, `${path}.id`),
     type: "group",

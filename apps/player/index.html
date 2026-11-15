@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <title>MVM Player</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0a0a0a; color: #fff; }
+    #app { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+    .screen { width: 100%; height: 100%; display: none; flex-direction: column; align-items: center; justify-content: center; }
+    .screen.active { display: flex; }
+    .title { font-size: 2rem; font-weight: 700; margin-bottom: 1rem; color: #C8F31D; }
+    .subtitle { font-size: 1rem; color: #888; margin-bottom: 2rem; }
+    .code-input { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+    .code-input input { width: 3rem; height: 4rem; text-align: center; font-size: 1.5rem; font-weight: 700; border: 2px solid #333; border-radius: 8px; background: #1a1a1a; color: #fff; }
+    .code-input input:focus { outline: none; border-color: #C8F31D; }
+    .btn { padding: 0.75rem 2rem; font-size: 1rem; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; transition: opacity 0.2s; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #C8F31D; color: #0a0a0a; }
+    .btn-secondary { background: #333; color: #fff; }
+    .error { color: #f44; margin-top: 1rem; font-size: 0.9rem; }
+    .program-list { width: 90%; max-width: 600px; max-height: 60vh; overflow-y: auto; }
+    .program-item { padding: 1rem; margin: 0.5rem 0; background: #1a1a1a; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: border-color 0.2s; }
+    .program-item.selected { border-color: #C8F31D; }
+    .program-item:focus { outline: none; border-color: #C8F31D; }
+    .program-name { font-size: 1.1rem; font-weight: 600; }
+    .program-meta { font-size: 0.85rem; color: #888; margin-top: 0.25rem; }
+    .player-wrap { position: absolute; inset: 0; }
+    .player-wrap iframe { width: 100%; height: 100%; border: none; }
+    .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+    .overlay.show { display: flex; }
+    .loading { font-size: 1.2rem; color: #888; }
+    .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #C8F31D; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 1rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="pair-screen" class="screen active">
+      <h1 class="title">MVM Player</h1>
+      <p class="subtitle">6자리 페어링 코드를 입력하세요</p>
+      <div class="code-input" id="code-inputs"></div>
+      <button class="btn btn-primary" id="pair-btn" disabled>연결하기</button>
+      <p class="error" id="pair-error"></p>
+    </div>
+    <div id="list-screen" class="screen">
+      <h1 class="title">프로그램 선택</h1>
+      <p class="subtitle">재생할 프로그램을 선택하세요</p>
+      <div class="program-list" id="program-list"></div>
+      <button class="btn btn-primary" id="play-btn" disabled style="margin-top:1rem">재생 시작</button>
+    </div>
+    <div id="play-screen" class="screen">
+      <div class="player-wrap" id="player-wrap"></div>
+      <div class="overlay" id="pause-overlay">
+        <p class="title">일시정지</p>
+        <p class="subtitle">Enter를 눌러 계속</p>
+      </div>
+      <div class="overlay" id="error-overlay">
+        <p class="title">오류 발생</p>
+        <p class="subtitle" id="error-msg">네트워크 오류</p>
+        <button class="btn btn-secondary" id="retry-btn" style="margin-top:1rem">재시도</button>
+      </div>
+    </div>
+    <div id="done-screen" class="screen">
+      <h1 class="title">재생 완료</h1>
+      <p class="subtitle">프로그램이 끝났습니다</p>
+      <button class="btn btn-primary" id="back-btn">목록으로</button>
+    </div>
+    <div class="overlay" id="loading-overlay">
+      <div class="spinner"></div>
+      <p class="loading">불러오는 중...</p>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
