@@ -18,6 +18,7 @@ import { VideosController } from "./videos.controller";
 import { VideoQueueService } from "./video-queue.service";
 import { AudioController } from "./audio.controller";
 import { VoicePacksController } from "./voice-packs.controller";
+import { SkinsController } from "./skins.controller";
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { VoicePacksController } from "./voice-packs.controller";
     VideosController,
     AudioController,
     VoicePacksController,
+    SkinsController,
     PlayerController,
     AccountsController,
     OperationsController,

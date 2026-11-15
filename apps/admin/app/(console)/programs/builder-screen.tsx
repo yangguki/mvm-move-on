@@ -43,6 +43,7 @@ type VideoItem = { id: string; name: string; url: string; durationSec: number; t
 type AudioItem = { id: string; name: string; kind: string; url: string; durationSec: number; mimeType: string };
 type VoicePackItem = { id: string; name: string; isDefault: boolean };
 type VersionItem = { id: string; version: number; name: string; publishedAt: string; stepCount: number };
+type SkinItem = { id: string; slug: string; name: string; tokens: Record<string, unknown>; isActive: boolean };
 
 type Block =
   | { type: "single"; index: number; step: Step }
@@ -157,6 +158,7 @@ function toSharedProgram(input: {
   updatedAt: string;
   publishedVersion: number | null;
   steps: Step[];
+  skinSlug?: string;
 }): SharedProgram {
   const items: ProgramItem[] = [];
   let index = 0;
@@ -203,7 +205,7 @@ function toSharedProgram(input: {
     draftUpdatedAt: input.updatedAt || new Date().toISOString(),
     publishedVersion: input.publishedVersion,
     skin: {
-      id: "neon-arcade",
+      id: input.skinSlug || "neon-arcade",
       options: { pointColor: "#C8F31D", nextLeadSec: 10 },
     },
     items,
@@ -221,6 +223,8 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [audioItems, setAudioItems] = useState<AudioItem[]>([]);
   const [voicePacks, setVoicePacks] = useState<VoicePackItem[]>([]);
+  const [skins, setSkins] = useState<SkinItem[]>([]);
+  const [selectedSkinSlug, setSelectedSkinSlug] = useState("neon-arcade");
   const [steps, setSteps] = useState<Step[]>([]);
   const [selected, setSelected] = useState(0);
   const [published, setPublished] = useState<number | null>(null);
@@ -248,6 +252,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     setProgramId(program.id);
     setName(program.name);
     setSkinOptions(program.skin.options);
+    setSelectedSkinSlug(program.skin.id || "neon-arcade");
     setPublished(program.publishedVersion);
     setStatus(program.status);
     setNeedsRepublish(program.needsRepublish ?? false);
@@ -264,15 +269,17 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [list, videoList, audioList, packList] = await Promise.all([
+      const [list, videoList, audioList, packList, skinList] = await Promise.all([
         api<{ items: Program[] }>("/admin/v1/programs"),
         api<{ items: VideoItem[] }>("/admin/v1/videos"),
         api<{ items: AudioItem[] }>("/admin/v1/audio"),
         api<{ items: VoicePackItem[] }>("/admin/v1/voice-packs"),
+        api<{ items: SkinItem[] }>("/admin/v1/skins"),
       ]);
       setVideos(videoList.items);
       setAudioItems(audioList.items);
       setVoicePacks(packList.items);
+      setSkins(skinList.items);
       const id = initialId || list.items.find((item) => item.name.includes("머슬핏"))?.id || list.items[0]?.id;
       if (!id) {
         setEmpty(true);
@@ -288,7 +295,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId]);
 
-  function persist(nextSteps: Step[], nextName = name, nextSkin = skinOptions) {
+  function persist(nextSteps: Step[], nextName = name, nextSkin = skinOptions, nextSkinSlug = selectedSkinSlug) {
     if (!programId) return Promise.resolve(undefined);
     const draftProgram = toSharedProgram({
       id: programId,
@@ -297,6 +304,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       updatedAt: new Date().toISOString(),
       publishedVersion: published,
       steps: nextSteps,
+      skinSlug: nextSkinSlug,
     });
     draftProgram.skin.options = nextSkin;
     const run = saveChain.current.then(async () => {
@@ -323,10 +331,10 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   }
 
   useEffect(() => {
-    const key = JSON.stringify({ name, skin: { id: "neon-arcade", options: skinOptions }, steps });
+    const key = JSON.stringify({ name, skin: { id: selectedSkinSlug, options: skinOptions }, steps });
     if (!programId || key === snapshot.current) return;
     const timer = window.setTimeout(() => {
-      void persist(steps, name, skinOptions)
+      void persist(steps, name, skinOptions, selectedSkinSlug)
         .then((saved) => {
           if (saved) setError("");
         })
@@ -334,7 +342,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     }, 700);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [steps, name, skinOptions, programId]);
+  }, [steps, name, skinOptions, selectedSkinSlug, programId]);
 
   useEffect(() => {
     const step = steps[selected];
@@ -484,7 +492,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
               { id: "guide-1", type: "guide", durationSec: 10, label: "시작 카운트다운", text: "카운트다운" },
               { id: "ex-1", type: "exercise", durationSec: 45, label: "새 운동", videoId: videos[0]?.id },
             ],
-            skin: { id: "neon-arcade", options: skinOptions },
+            skin: { id: selectedSkinSlug || "neon-arcade", options: skinOptions },
           },
         }),
       });
@@ -539,10 +547,15 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       updatedAt: updatedAt || new Date().toISOString(),
       publishedVersion: published,
       steps,
+      skinSlug: selectedSkinSlug,
     });
     program.skin.options = skinOptions;
+    const currentSkin = skins.find((s) => s.slug === selectedSkinSlug);
+    if (currentSkin?.tokens) {
+      (program.skin as { tokens?: Record<string, unknown> }).tokens = currentSkin.tokens;
+    }
     return program;
-  }, [programId, name, status, updatedAt, published, steps, skinOptions]);
+  }, [programId, name, status, updatedAt, published, steps, skinOptions, selectedSkinSlug, skins]);
   const videoMap = useMemo(() => Object.fromEntries(videos.map((video) => [video.id, video])), [videos]);
   const playItems = useMemo(() => expand(sharedProgram, videoMap), [sharedProgram, videoMap]);
   const total = playTotalSec(playItems);
@@ -739,7 +752,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                   v{version.version} · {version.name}
                 </span>
                 <span className="subtle">
-                  {version.stepCount}단계 · neon-arcade ·{" "}
+                  {version.stepCount}단계 · {selectedSkinSlug} ·{" "}
                   {new Date(version.publishedAt).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                 </span>
               </div>
@@ -832,10 +845,20 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                 </span>
               ))}
             </div>
-            <span className="sel-dark">
-              <span style={{ width: 10, height: 10, borderRadius: 3, background: skinOptions.pointColor || "var(--volt-500)" }} />
-              neon-arcade
-            </span>
+            <select
+              className="sel-dark"
+              value={selectedSkinSlug}
+              onChange={(e) => setSelectedSkinSlug(e.target.value)}
+              style={{ background: "var(--gray-800)", border: "1px solid var(--gray-600)", borderRadius: 6, padding: "4px 8px", color: "#fff", fontSize: 13 }}
+            >
+              {skins
+                .filter((s) => s.isActive || s.slug === selectedSkinSlug)
+                .map((s) => (
+                  <option key={s.id} value={s.slug}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
           </div>
           <div className="tv-wrap" style={{ alignItems: "center" }}>
             <div className="tv">

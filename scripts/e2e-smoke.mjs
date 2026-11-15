@@ -221,6 +221,13 @@ function step8_playerProgramDetail() {
   if (!video) fail("8", "영상이 스냅샷에 없음");
   log("8", `영상 URL: ${video.url}`);
   
+  // 스킨 토큰 포함 확인
+  if (res.skin?.tokens) {
+    log("8", `스킨 토큰 포함 OK: accent=${res.skin.tokens.accent || "(none)"}`);
+  } else {
+    log("8", "WARNING: 스킨 토큰이 스냅샷에 없음");
+  }
+  
   // 영상 URL 접근 가능 확인
   try {
     execSync(`curl -s -I "${video.url}" | head -1`, { encoding: "utf-8" });
@@ -230,20 +237,58 @@ function step8_playerProgramDetail() {
   }
 }
 
+function step8b_skinDeleteProtection() {
+  log("8b", "스킨 삭제 보호 테스트...");
+  
+  // neon-arcade 스킨 조회
+  const skins = curlWithAuth("GET", "/admin/v1/skins");
+  const neon = skins.items?.find((s) => s.slug === "neon-arcade");
+  if (!neon) {
+    log("8b", "WARNING: neon-arcade 스킨 없음, 스킵");
+    return;
+  }
+  
+  // 삭제 시도 (사용 중이면 409)
+  try {
+    const result = execSync(
+      `curl -s -w "\\n%{http_code}" -X DELETE -H "Authorization: Bearer ${token}" "${API}/admin/v1/skins/${neon.id}"`,
+      { encoding: "utf-8" }
+    );
+    const lines = result.trim().split("\n");
+    const status = lines.pop();
+    
+    if (status === "409") {
+      log("8b", `스킨 삭제 보호 OK: 409 응답 (builtin 또는 사용 중)`);
+    } else {
+      fail("8b", `삭제가 허용됨 (status=${status})`);
+    }
+  } catch (err) {
+    fail("8b", `요청 실패: ${err.message}`);
+  }
+}
+
 function step9_playerProxy() {
   log("9", "플레이어(3002) 프록시 확인...");
   
-  try {
-    const result = execSync(`curl -s -H "X-Device-Token: ${deviceToken}" "http://localhost:3002/player/v1/programs"`, { encoding: "utf-8" });
-    const res = JSON.parse(result);
-    if (res.items) {
-      log("9", `플레이어 프록시 OK: ${res.items.length}개 프로그램`);
-    } else {
-      log("9", `WARNING: 플레이어 프록시 응답 이상`);
+  for (let retry = 0; retry < 5; retry++) {
+    try {
+      const result = execSync(`curl -s --max-time 3 -H "X-Device-Token: ${deviceToken}" "http://localhost:3002/player/v1/programs"`, { encoding: "utf-8" });
+      const res = JSON.parse(result);
+      if (res.items) {
+        log("9", `플레이어 프록시 OK: ${res.items.length}개 프로그램`);
+        return;
+      } else {
+        log("9", `WARNING: 플레이어 프록시 응답 이상`);
+        return;
+      }
+    } catch {
+      if (retry < 4) {
+        log("9", `  플레이어 프록시 재시도 ${retry + 1}/5...`);
+        execSync("sleep 2");
+      }
     }
-  } catch {
-    log("9", `WARNING: 플레이어 프록시 실패`);
   }
+  log("9", `WARNING: 플레이어 프록시 실패 (3002 포트 미실행 가능)`);
 }
 
 function main() {
@@ -260,6 +305,7 @@ function main() {
     step6_playerPair();
     step7_playerPrograms();
     step8_playerProgramDetail();
+    step8b_skinDeleteProtection();
     step9_playerProxy();
     
     console.log("\n=== ALL STEPS PASSED ===");

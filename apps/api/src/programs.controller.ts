@@ -88,6 +88,7 @@ type PresentedProgram = SharedProgram & {
 function present(
   row: { id: string; name: string; status: string; draft: unknown; draftUpdatedAt: Date; publishedVersion: number | null },
   publishedSnapshot?: { items: unknown; skin: unknown } | null,
+  currentSkinTokens?: Record<string, unknown> | null,
 ): PresentedProgram {
   const draft = row.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
   const program: SharedProgram = {
@@ -100,7 +101,14 @@ function present(
     items: draft.items,
   };
   const play = expand(program);
-  const needsRepublish = row.publishedVersion != null && publishedSnapshot != null && !deepEqual(draft, publishedSnapshot);
+  let needsRepublish = row.publishedVersion != null && publishedSnapshot != null && !deepEqual(draft, publishedSnapshot);
+  if (!needsRepublish && row.publishedVersion != null && publishedSnapshot != null && currentSkinTokens) {
+    const pubSkin = publishedSnapshot.skin as { tokens?: Record<string, unknown> } | undefined;
+    const pubTokens = pubSkin?.tokens;
+    if (!deepEqual(currentSkinTokens, pubTokens)) {
+      needsRepublish = true;
+    }
+  }
   return {
     ...program,
     totals: { seconds: playTotalSec(play), stepCount: play.length },
@@ -134,7 +142,16 @@ export class ProgramsController {
         return [v.programId, { items: snap.items, skin: snap.skin }];
       }),
     );
-    return { items: rows.map((r) => present(r, snapshotMap.get(r.id))) };
+    const skinSlugs = [...new Set(rows.map((r) => (r.draft as { skin?: { id?: string } })?.skin?.id).filter(Boolean))] as string[];
+    const skinRows = await this.prisma.skin.findMany({ where: { slug: { in: skinSlugs } } });
+    const skinTokensMap = new Map(skinRows.map((s) => [s.slug, s.tokens as Record<string, unknown>]));
+    return {
+      items: rows.map((r) => {
+        const skinSlug = (r.draft as { skin?: { id?: string } })?.skin?.id;
+        const skinTokens = skinSlug ? skinTokensMap.get(skinSlug) : null;
+        return present(r, snapshotMap.get(r.id), skinTokens);
+      }),
+    };
   }
 
   @Post()
@@ -151,7 +168,7 @@ export class ProgramsController {
       },
     });
     const row = await this.prisma.program.create({
-      data: { name, status: "draft", draft, draftUpdatedAt: new Date() },
+      data: { name, status: "draft", draft: JSON.parse(JSON.stringify(draft)), draftUpdatedAt: new Date() },
     });
     return present(row, null);
   }
@@ -160,7 +177,13 @@ export class ProgramsController {
   async detail(@Param("id") id: string) {
     const row = await this.load(id);
     const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
-    return present(row, published);
+    const skinSlug = (row.draft as { skin?: { id?: string } })?.skin?.id;
+    let skinTokens: Record<string, unknown> | null = null;
+    if (skinSlug) {
+      const skinRow = await this.prisma.skin.findFirst({ where: { slug: skinSlug } });
+      if (skinRow) skinTokens = skinRow.tokens as Record<string, unknown>;
+    }
+    return present(row, published, skinTokens);
   }
 
   @Put(":id")
@@ -179,12 +202,18 @@ export class ProgramsController {
       data: {
         name,
         status: "draft",
-        draft,
+        draft: JSON.parse(JSON.stringify(draft)),
         draftUpdatedAt: new Date(),
       },
     });
     const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
-    return present(row, published);
+    const skinSlug = (row.draft as { skin?: { id?: string } })?.skin?.id;
+    let skinTokens: Record<string, unknown> | null = null;
+    if (skinSlug) {
+      const skinData = await this.prisma.skin.findFirst({ where: { slug: skinSlug } });
+      if (skinData) skinTokens = skinData.tokens as Record<string, unknown>;
+    }
+    return present(row, published, skinTokens);
   }
 
   @Post(":id/publish")
@@ -193,6 +222,8 @@ export class ProgramsController {
     const draft = current.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
     const nextVersion = (current.publishedVersion ?? 0) + 1;
     const skin = await resolveProgramSkin(this.prisma, draft.skin);
+    const skinRow = await this.prisma.skin.findFirst({ where: { slug: draft.skin.id } });
+    const skinTokens = skinRow ? (skinRow.tokens as Record<string, unknown>) : {};
     const videos = await freezeVideos(this.prisma, draft.items);
     const base = validateProgram({
       id: current.id,
@@ -200,7 +231,7 @@ export class ProgramsController {
       status: "published",
       draftUpdatedAt: current.draftUpdatedAt.toISOString(),
       publishedVersion: nextVersion,
-      skin,
+      skin: { ...skin, tokens: skinTokens },
       items: draft.items,
     });
     const snapshot: PublishedSnapshot = { ...base, videos };
@@ -209,7 +240,7 @@ export class ProgramsController {
         data: {
           programId: id,
           version: nextVersion,
-          snapshot,
+          snapshot: JSON.parse(JSON.stringify(snapshot)),
         },
       });
       await tx.program.update({

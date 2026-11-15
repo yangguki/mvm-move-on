@@ -28,11 +28,13 @@ export type ResolvedVoicePack = {
 };
 
 export type ProgramSkin = {
-  id: "neon-arcade";
+  id: string;
   options: SkinOptions;
   /** 게시 스냅샷에만 url까지 풀려 들어갑니다 */
   music?: ResolvedAudioRef;
   voicePack?: ResolvedVoicePack;
+  /** 게시 스냅샷에 스킨 토큰이 동결됩니다 */
+  tokens?: Record<string, unknown>;
 };
 
 export type StepType = "exercise" | "rest" | "guide";

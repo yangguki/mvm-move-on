@@ -180,12 +180,83 @@
     return f.querySelector("video");
   }
 
+  function applyThemeTokens(tokens) {
+    if (!tokens) return;
+    var root = document.documentElement.style;
+    var stage = $("stage");
+    var body = document.body;
+
+    if (tokens.primary) {
+      root.setProperty("--theme-primary", tokens.primary);
+      root.setProperty("--neon", tokens.primary);
+    }
+    if (tokens.secondary) {
+      root.setProperty("--theme-secondary", tokens.secondary);
+      root.setProperty("--pink", tokens.secondary);
+    }
+    if (tokens.accent) {
+      root.setProperty("--theme-accent", tokens.accent);
+      root.setProperty("--lime", tokens.accent);
+    }
+    if (tokens.background) {
+      root.setProperty("--theme-bg", tokens.background);
+      root.setProperty("--bg", tokens.background);
+    }
+    if (tokens.surface) root.setProperty("--theme-surface", tokens.surface);
+    if (tokens.text) root.setProperty("--theme-text", tokens.text);
+    if (tokens.textMuted) {
+      root.setProperty("--theme-muted", tokens.textMuted);
+    }
+    if (tokens.fontFamily) {
+      root.setProperty("--theme-font", tokens.fontFamily);
+      body.style.fontFamily = tokens.fontFamily;
+    }
+    if (typeof tokens.borderRadius === "number") root.setProperty("--theme-radius", tokens.borderRadius + "px");
+    if (typeof tokens.videoRadius === "number") root.setProperty("--theme-video-radius", tokens.videoRadius + "px");
+
+    if (tokens.barGradient) root.setProperty("--bar-gradient", tokens.barGradient);
+    if (tokens.frameGlow) root.setProperty("--frame-glow", tokens.frameGlow);
+    if (tokens.frameBorder) root.setProperty("--frame-border", tokens.frameBorder);
+    if (tokens.nameGlow) root.setProperty("--name-glow", tokens.nameGlow);
+    if (tokens.bgPattern) root.setProperty("--bg-pattern", tokens.bgPattern);
+    if (tokens.warningStripe) root.setProperty("--warning-stripe", tokens.warningStripe);
+
+    var theme = tokens.theme || "neon-arcade";
+    stage.setAttribute("data-theme", theme);
+    body.setAttribute("data-theme", theme);
+
+    if (tokens.scanlines === false) stage.classList.add("no-scanlines");
+    else stage.classList.remove("no-scanlines");
+
+    if (tokens.liveIndicator) stage.classList.add("has-live");
+    else stage.classList.remove("has-live");
+
+    if (tokens.scoreboard) stage.classList.add("has-scoreboard");
+    else stage.classList.remove("has-scoreboard");
+
+    if (tokens.energyGauge) stage.classList.add("has-energy");
+    else stage.classList.remove("has-energy");
+
+    if (tokens.chalkTexture) stage.classList.add("has-chalk");
+    else stage.classList.remove("has-chalk");
+
+    if (tokens.metalTexture) stage.classList.add("has-metal");
+    else stage.classList.remove("has-metal");
+
+    if (tokens.countdownLabel) window._skinLabels = window._skinLabels || {};
+    if (tokens.countdownLabel) window._skinLabels.rest = tokens.countdownLabel;
+    if (tokens.completeLabel) window._skinLabels.complete = tokens.completeLabel;
+  }
+
   function applySkin(skin) {
     options = (skin && skin.options) || options;
     nextLeadSec = typeof options.nextLeadSec === "number" ? options.nextLeadSec : 10;
     if (options.pointColor) {
       document.documentElement.style.setProperty("--lime", options.pointColor);
       document.documentElement.style.setProperty("--neon", options.pointColor);
+    }
+    if (skin && skin.tokens) {
+      applyThemeTokens(skin.tokens);
     }
     var stills = document.querySelectorAll(".still");
     var restUrl = options.restImageUrl || "rest_image.jpg";

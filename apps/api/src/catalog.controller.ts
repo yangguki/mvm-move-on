@@ -136,7 +136,7 @@ export class CatalogController {
         slug: skin.slug,
         name: skin.name,
         tone: skin.tone,
-        isSystem: skin.isSystem,
+        isBuiltin: skin.isBuiltin,
         storeCount: new Set(skin.devices.map((device) => device.storeId)).size,
       })),
     };

@@ -63,7 +63,7 @@ function validateItem(raw: unknown, path: string): ProgramItem {
 export function validateProgram(raw: unknown): Program {
   if (!isRecord(raw)) throw new Error("프로그램 본문이 필요해요");
   if (!isRecord(raw.skin)) throw new Error("skin이 필요해요");
-  if (raw.skin.id !== "neon-arcade") throw new Error("skin.id는 neon-arcade만 지원해요");
+  const skinId = asString(raw.skin.id ?? "neon-arcade", "skin.id");
   if (!isRecord(raw.skin.options)) throw new Error("skin.options가 필요해요");
   const nextLeadSec = raw.skin.options.nextLeadSec == null ? 10 : asNumber(raw.skin.options.nextLeadSec, "skin.options.nextLeadSec");
   if (!Number.isInteger(nextLeadSec) || nextLeadSec < 0) throw new Error("nextLeadSec는 0 이상 정수예요");
@@ -78,7 +78,7 @@ export function validateProgram(raw: unknown): Program {
   if (raw.skin.options.restImageUrl != null) options.restImageUrl = asString(raw.skin.options.restImageUrl, "skin.options.restImageUrl");
   if (raw.skin.options.musicId != null) options.musicId = asString(raw.skin.options.musicId, "skin.options.musicId");
   if (raw.skin.options.voicePackId != null) options.voicePackId = asString(raw.skin.options.voicePackId, "skin.options.voicePackId");
-  const skin: Program["skin"] = { id: "neon-arcade", options };
+  const skin: Program["skin"] = { id: skinId, options };
   if (isRecord(raw.skin.music) && typeof raw.skin.music.url === "string") {
     skin.music = {
       id: asString(raw.skin.music.id, "skin.music.id"),

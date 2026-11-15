@@ -6,16 +6,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MVN · 네온 아케이드</title>
 <style>
-  :root{--neon:#00f0ff;--pink:#ff2bd6;--lime:#b6ff3b;--bg:#07051a;--dur:.7s;--ease:cubic-bezier(.65,0,.35,1)}
+  :root{--neon:#00f0ff;--pink:#ff2bd6;--lime:#b6ff3b;--bg:#07051a;--dur:.7s;--ease:cubic-bezier(.65,0,.35,1);
+    --bar-gradient:linear-gradient(90deg,var(--neon),var(--pink));--frame-glow:0 0 24px var(--neon),0 0 60px rgba(255,43,214,.45);
+    --frame-border:4px solid var(--neon);--name-glow:0 0 8px var(--neon),0 0 24px var(--neon),0 0 48px var(--pink);--bg-pattern:none;--warning-stripe:none}
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:none;font-family:"Pretendard","Noto Sans KR",system-ui,sans-serif}
-  /* TV 1920x1080 기준 스테이지, 다른 해상도에선 비율 유지하며 축소 */
+  html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:none;font-family:var(--theme-font,"Pretendard","Noto Sans KR",system-ui,sans-serif)}
   .stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform-origin:center;
     background:radial-gradient(ellipse at 50% -10%,#2a0d5c 0%,var(--bg) 60%);
     display:flex;flex-direction:column;align-items:center;padding:12px 60px 6px;gap:8px;color:#fff}
-  /* 스캔라인은 영상 프레임(z2) 아래에 둠: 영상 위 전면 반투명 레이어가 매 영상 프레임마다 합성되던 비용 제거(흰 영상 위에선 원래 안 보임) */
   .stage::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
     background:linear-gradient(transparent 0 50%,rgba(255,255,255,.03) 50% 100%);background-size:100% 4px}
+  .stage.no-scanlines::before{display:none}
   /* 상단 스킨 영역 */
   /* 상단 HUD는 영상 자리를 최대로 쓰도록 68px 한 줄로 압축 */
   .hud{width:100%;height:68px;flex:0 0 auto;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:40px}
@@ -23,14 +24,12 @@
   .fade.out{opacity:0}
   .step{font-size:28px;font-weight:800;letter-spacing:4px;color:var(--lime);text-shadow:0 0 12px var(--lime)}
   .step small{display:block;font-size:18px;letter-spacing:2px;color:#cfc8ff;text-shadow:none;margin-top:4px}
-  .name{font-size:52px;line-height:1.1;font-weight:900;text-align:center;color:#fff;
-    text-shadow:0 0 8px var(--neon),0 0 24px var(--neon),0 0 48px var(--pink)}
+  .name{font-size:52px;line-height:1.1;font-weight:900;text-align:center;color:var(--theme-text,#fff);text-shadow:var(--name-glow)}
   .timer{justify-self:end;display:flex;align-items:center;gap:16px;font-family:"Courier New",monospace;font-size:64px;font-weight:700;color:var(--pink);
     text-shadow:0 0 10px var(--pink),0 0 30px var(--pink);line-height:1}
   .timer span{font-size:20px;color:#cfc8ff;text-shadow:none;letter-spacing:3px}
-  .bar{width:100%;height:8px;flex:0 0 auto;border-radius:4px;background:#1b1440;border:1px solid #3a2a7a;overflow:hidden}
-  .bar i{display:block;height:100%;width:100%;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,var(--neon),var(--pink));
-    box-shadow:0 0 16px var(--neon)}
+  .bar{width:100%;height:8px;flex:0 0 auto;border-radius:4px;background:var(--theme-surface,#1b1440);border:1px solid rgba(255,255,255,0.1);overflow:hidden}
+  .bar i{display:block;height:100%;width:100%;transform-origin:0 50%;transform:scaleX(0);background:var(--bar-gradient);box-shadow:0 0 16px var(--neon)}
   /* 하단 영역 1800x970. 메인 자리는 가운데 1776x970(영상은 cover로 위아래 흰 여백만 약간 잘림).
      NEXT 표시 중엔 메인을 transform(translate+scale)으로 왼쪽 1228폭까지 줄이고, 오른쪽 540px에 NEXT 패널 */
   .videoWrap{flex:1;min-height:0;width:100%;position:relative}
@@ -47,13 +46,10 @@
   /* 영상 프레임 2개(A/B): 역할(main/pv)에 따라 자리·테두리가 바뀌고, 전환 시 미리보기가 메인 자리로 커지며 이동 */
   /* 영상 프레임은 스케일된 스테이지 밖(body)에 실제 px로 배치 → 영상 요소에 상위 transform·둥근 클리핑·위 겹침 없음(파일 단독 재생과 같은 빠른 합성 경로).
      테두리·글로우는 프레임(영상 뒤)에만, 영상은 테두리 안쪽 10px에 네모로(클리핑 없음) */
-  .frame{position:absolute;background:#000;z-index:2;transform-origin:0 0}
-  /* cover + 46%: 메인(1776x970) 기준 원본 위 16px·아래 19px만 잘림(인물·덤벨·발 바깥 흰 여백). 16:9 미리보기는 잘림 없음 */
-  .frame video{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);object-fit:cover;object-position:50% 46%;display:block;background:#000}
-  .frame.main{border-radius:32px;border:4px solid var(--neon);
-    box-shadow:0 0 24px var(--neon),0 0 60px rgba(255,43,214,.45),inset 0 0 20px rgba(0,240,255,.3);
-    transition:transform var(--dur) var(--ease)}
-  .frame.pv{border-radius:24px;border:4px solid var(--pink);box-shadow:0 0 18px var(--pink);opacity:0;transform:translateX(40px);visibility:hidden;
+  .frame{position:absolute;background:#000;z-index:2;transform-origin:0 0;border-radius:var(--theme-video-radius,32px)}
+  .frame video{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);object-fit:cover;object-position:50% 46%;display:block;background:#000;border-radius:calc(var(--theme-video-radius,32px) - 6px)}
+  .frame.main{border:var(--frame-border);box-shadow:var(--frame-glow),inset 0 0 20px rgba(0,240,255,.15);transition:transform var(--dur) var(--ease)}
+  .frame.pv{border:4px solid var(--pink);box-shadow:0 0 18px var(--pink);opacity:0;transform:translateX(40px);visibility:hidden;
     transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease),visibility 0s linear var(--dur)}
   .frame.pv.show{opacity:1;transform:none;visibility:visible;transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
   .frame.anim{transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
@@ -81,6 +77,77 @@
   .sndBtn.hide{display:none}
 
   #logo{display:none;height:48px;justify-self:start}
+
+  /* ===== IRON GYM THEME ===== */
+  [data-theme="iron-gym"] .stage{background:var(--bg-pattern,#1A1C1E)}
+  [data-theme="iron-gym"] .stage::before{background:repeating-linear-gradient(90deg,transparent 0px,transparent 4px,rgba(0,0,0,0.15) 4px,rgba(0,0,0,0.15) 8px);background-size:8px 100%}
+  [data-theme="iron-gym"] .hud{background:linear-gradient(180deg,rgba(60,60,60,0.9) 0%,rgba(40,40,40,0.95) 100%);border-bottom:4px solid #FF5722;padding:0 20px;margin:0 -60px;width:calc(100% + 120px)}
+  [data-theme="iron-gym"] .step{color:#FF5722;text-shadow:none;font-weight:900;letter-spacing:2px}
+  [data-theme="iron-gym"] .name{text-shadow:2px 2px 0 #000;text-transform:uppercase;letter-spacing:4px}
+  [data-theme="iron-gym"] .timer b{color:#FF5722;text-shadow:none;font-family:'Impact','Arial Black',sans-serif}
+  [data-theme="iron-gym"] .bar{border-radius:0;height:12px;border:2px solid #5C6269}
+  [data-theme="iron-gym"] .bar i{box-shadow:none}
+  [data-theme="iron-gym"] .frame.main{border-radius:4px;box-shadow:8px 8px 0 rgba(0,0,0,0.5)}
+  [data-theme="iron-gym"] .rest{background:var(--warning-stripe);padding:20px 40px}
+  [data-theme="iron-gym"] .rest .big{color:#FFF;text-shadow:2px 2px 0 #000;animation:none}
+  [data-theme="iron-gym"] .rest .cnt{color:#FF5722;text-shadow:2px 2px 0 #000}
+  [data-theme="iron-gym"] .next .tag{background:#FF5722;color:#000;border-radius:0;animation:none}
+
+  /* ===== LIVE BROADCAST THEME ===== */
+  [data-theme="live-broadcast"] .stage{background:#0F1419}
+  [data-theme="live-broadcast"] .stage::before{display:none}
+  [data-theme="live-broadcast"] .hud{position:relative}
+  [data-theme="live-broadcast"] .hud::before{content:"● LIVE";position:absolute;left:0;top:50%;transform:translateY(-50%);background:#E11D2E;color:#fff;font-size:18px;font-weight:900;padding:6px 16px;border-radius:4px;animation:livePulse 1.5s ease-in-out infinite}
+  @keyframes livePulse{0%,100%{opacity:1}50%{opacity:0.6}}
+  [data-theme="live-broadcast"] .step{color:#A0AAB4;text-shadow:none;margin-left:100px}
+  [data-theme="live-broadcast"] .name{background:linear-gradient(90deg,#E11D2E 0%,#E11D2E 4px,#1D4ED8 4px);padding:8px 24px 8px 16px;text-shadow:none;font-size:44px}
+  [data-theme="live-broadcast"] .timer{background:#1E252D;padding:8px 20px;border-left:4px solid #E11D2E}
+  [data-theme="live-broadcast"] .timer b{color:#FFF;text-shadow:none;font-family:'Arial Black',sans-serif;font-size:56px}
+  [data-theme="live-broadcast"] .timer span{color:#E11D2E}
+  [data-theme="live-broadcast"] .bar{border-radius:0;height:6px;background:#1E252D;border:none}
+  [data-theme="live-broadcast"] .frame.main{border-radius:0;border:none;box-shadow:none}
+  [data-theme="live-broadcast"] .rest{background:#E11D2E;padding:16px 32px;border-radius:0}
+  [data-theme="live-broadcast"] .rest .big{font-size:48px;color:#FFF;animation:none}
+  [data-theme="live-broadcast"] .rest .cnt{color:#FFF;font-size:100px}
+  [data-theme="live-broadcast"] .next .tag{background:#1D4ED8;color:#FFF;border-radius:4px;font-size:32px}
+  [data-theme="live-broadcast"] .next .nname{text-shadow:none}
+  [data-theme="live-broadcast"]::after{content:"";position:fixed;bottom:0;left:0;right:0;height:60px;background:linear-gradient(90deg,#E11D2E 0%,#E11D2E 200px,#1E252D 200px);z-index:10}
+
+  /* ===== POWER ENERGY THEME ===== */
+  [data-theme="power-energy"] .stage{background:var(--bg-pattern,#0D0D15)}
+  [data-theme="power-energy"] .stage::before{background:repeating-linear-gradient(135deg,transparent 0px,transparent 30px,rgba(255,122,0,0.03) 30px,rgba(255,122,0,0.03) 60px);background-size:85px 85px}
+  [data-theme="power-energy"] .step{color:#FFD400;text-shadow:0 0 20px rgba(255,122,0,0.8)}
+  [data-theme="power-energy"] .name{background:linear-gradient(90deg,#FF7A00,#FFD400);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:none;filter:drop-shadow(0 0 20px rgba(255,122,0,0.6))}
+  [data-theme="power-energy"] .timer b{color:#FFD400;text-shadow:0 0 20px rgba(255,212,0,0.8)}
+  [data-theme="power-energy"] .bar{height:16px;border-radius:8px;background:#1A1A2E;border:2px solid #FF7A00;overflow:visible}
+  [data-theme="power-energy"] .bar i{border-radius:6px;box-shadow:0 0 20px #FF7A00,0 0 40px rgba(255,212,0,0.5)}
+  [data-theme="power-energy"] .frame.main{border:4px solid #FF7A00;box-shadow:0 0 40px rgba(255,122,0,0.6),inset 0 0 30px rgba(255,122,0,0.2)}
+  [data-theme="power-energy"] .rest{background:linear-gradient(135deg,rgba(255,122,0,0.9),rgba(255,212,0,0.9));padding:20px 40px;border-radius:16px}
+  [data-theme="power-energy"] .rest .big{color:#0D0D15;text-shadow:none;animation:energyPulse 0.8s ease-in-out infinite}
+  @keyframes energyPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+  [data-theme="power-energy"] .rest .cnt{color:#0D0D15}
+  [data-theme="power-energy"] .next .tag{background:linear-gradient(135deg,#FF7A00,#FFD400);color:#0D0D15;box-shadow:0 0 30px rgba(255,122,0,0.6)}
+
+  /* ===== WOD CHALKBOARD THEME ===== */
+  [data-theme="wod-chalkboard"] .stage{background:#1F3A2E}
+  [data-theme="wod-chalkboard"] .stage::before{background:var(--bg-pattern);opacity:0.15}
+  [data-theme="wod-chalkboard"] .hud{border-bottom:3px dashed #8B9A7A}
+  [data-theme="wod-chalkboard"] .step{color:#FFD93D;text-shadow:1px 1px 0 rgba(0,0,0,0.5);font-family:'Caveat','Comic Sans MS',cursive}
+  [data-theme="wod-chalkboard"] .step small{font-family:'Caveat','Comic Sans MS',cursive}
+  [data-theme="wod-chalkboard"] .name{font-family:'Caveat','Comic Sans MS',cursive;text-shadow:2px 2px 0 rgba(0,0,0,0.4);font-size:64px;letter-spacing:2px}
+  [data-theme="wod-chalkboard"] .timer{font-family:'Caveat','Comic Sans MS',cursive}
+  [data-theme="wod-chalkboard"] .timer b{color:#FFD93D;text-shadow:1px 1px 0 rgba(0,0,0,0.5);font-family:'Caveat','Comic Sans MS',cursive;font-size:72px}
+  [data-theme="wod-chalkboard"] .timer span{font-family:'Caveat','Comic Sans MS',cursive}
+  [data-theme="wod-chalkboard"] .bar{border-radius:0;height:10px;background:#2A4A3A;border:2px dashed #8B9A7A}
+  [data-theme="wod-chalkboard"] .bar i{box-shadow:none}
+  [data-theme="wod-chalkboard"] .frame.main{border:4px dashed #8B9A7A;box-shadow:none;border-radius:8px}
+  [data-theme="wod-chalkboard"] .frame video{border-radius:4px}
+  [data-theme="wod-chalkboard"] .rest{border:3px dashed #FFD93D;background:rgba(31,58,46,0.95);padding:20px 40px;border-radius:50%}
+  [data-theme="wod-chalkboard"] .rest .big{color:#FFD93D;text-shadow:1px 1px 0 rgba(0,0,0,0.5);animation:none;font-family:'Caveat','Comic Sans MS',cursive;font-size:72px}
+  [data-theme="wod-chalkboard"] .rest .cnt{color:#E8E4D8;font-family:'Caveat','Comic Sans MS',cursive;font-size:120px}
+  [data-theme="wod-chalkboard"] .next .tag{background:#FFD93D;color:#1F3A2E;border-radius:4px;font-family:'Caveat','Comic Sans MS',cursive;animation:none}
+  [data-theme="wod-chalkboard"] .next .nname{font-family:'Caveat','Comic Sans MS',cursive;text-shadow:1px 1px 0 rgba(0,0,0,0.4)}
+  [data-theme="wod-chalkboard"] .sndBtn{font-family:'Caveat','Comic Sans MS',cursive;background:#FFD93D;color:#1F3A2E;border:3px dashed #8B9A7A}
 </style>
 </head>
 <body>
