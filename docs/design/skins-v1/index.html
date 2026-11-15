@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOVE ON TV 플레이어 · 기본 스킨 5종 (ADM-SKIN-09)</title>
+<style>
+/* =====================================================================
+   MOVE ON TV PLAYER — SKIN SYSTEM
+   One fixed 1920x1080 layout. A skin = a token set on [data-skin] + a few
+   decoration rules. Nothing a skin does may move an info element.
+   TV budget: no backdrop-filter / filter / mix-blend, no animated shadows,
+   static textures are small tiled PNGs, fonts are subset woff2.
+   ===================================================================== */
+@font-face{font-family:"MO Pretendard";src:url(fonts/Pretendard-ExtraBold.subset.woff2) format("woff2");font-weight:800;font-display:block}
+@font-face{font-family:"MO Pretendard";src:url(fonts/Pretendard-SemiBold.subset.woff2) format("woff2");font-weight:600;font-display:block}
+@font-face{font-family:"MO BlackHan";src:url(fonts/BlackHanSans.subset.woff2) format("woff2");font-display:block}
+@font-face{font-family:"MO Gaegu";src:url(fonts/Gaegu-Bold.subset.woff2) format("woff2");font-weight:700;font-display:block}
+@font-face{font-family:"MO ArchivoX";src:url(fonts/Archivo-BlackExpanded.latin.woff2) format("woff2");font-display:block}
+@font-face{font-family:"MO ArchivoC";src:url(fonts/Archivo-ExtraBoldCondensed.latin.woff2) format("woff2");font-display:block}
+@font-face{font-family:"MO ArchivoI";src:url(fonts/Archivo-BlackItalic.latin.woff2) format("woff2");font-display:block}
+@font-face{font-family:"MO Mono";src:url(fonts/JetBrainsMono-ExtraBold.latin.woff2) format("woff2");font-display:block}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#000;overflow:hidden}
+body{font-family:"MO Pretendard",system-ui,sans-serif}
+
+/* ---------- token defaults (= neon-arcade) ---------- */
+.stage{
+  --bg:#07051A; --bg-image:radial-gradient(ellipse at 50% -10%,#2A0D5C 0%,#07051A 60%);
+  --fg:#FFFFFF; --muted:#CFC8FF;
+  --primary:#00F0FF; --secondary:#FF2BD6; --accent:#B6FF3B; --on-accent:#07051A;
+  --font-head:"MO Pretendard"; --head-weight:800; --font-num:"MO Mono"; --num-tracking:0;
+  --panel-bg:#120A2E; --panel-border:2px solid #3A2A7A; --panel-radius:16px; --panel-shadow:none;
+  --label-color:#CFC8FF; --label-font:"MO Pretendard"; --label-size:22px; --label-tracking:.14em;
+  --step-color:var(--accent); --step-shadow:0 0 14px rgba(182,255,59,.6);
+  --name-color:#FFFFFF; --name-shadow:0 0 8px #00F0FF,0 0 24px #00F0FF; --name-skew:0deg;
+  --timer-color:var(--secondary); --timer-shadow:0 0 10px #FF2BD6,0 0 28px rgba(255,43,214,.7);
+  --tag-bg:var(--accent); --tag-fg:var(--on-accent); --tag-radius:10px;
+  --bar-track:#1B1440; --bar-border:1px solid #3A2A7A; --bar-fill:linear-gradient(90deg,#00F0FF,#FF2BD6); --bar-radius:6px;
+  --video-radius:28px; --ring-w:14px; --ring-color:#0A0722; --frame-line:4px solid #00F0FF; --frame-glow:0 0 28px rgba(0,240,255,.45);
+  --thumb-radius:10px; --thumb-line:3px solid #FF2BD6;
+  --scrim:rgba(7,5,26,.80);
+  --state-font:"MO Pretendard"; --state-color:#FFFFFF; --state-shadow:0 0 12px #FF2BD6,0 0 36px rgba(255,43,214,.6);
+  --state-num-color:var(--accent); --state-num-shadow:0 0 24px rgba(182,255,59,.7);
+  --chip-bg:#1B1440; --chip-fg:#FFFFFF; --chip-border:2px solid #3A2A7A; --chip-radius:999px;
+  --gauge-track:#1B1440; --gauge-fill:linear-gradient(0deg,#00F0FF,#FF2BD6); --gauge-seg:0px;
+}
+
+/* ---------- fixed layout (never changes per skin) ---------- */
+.stage{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;overflow:hidden;
+  background-color:var(--bg);background-image:var(--bg-image);color:var(--fg)}
+.layer{position:absolute;pointer-events:none}
+.top{position:absolute;left:48px;top:28px;width:1824px;height:200px;display:grid;grid-template-columns:240px 742px 330px 440px;gap:24px}
+.c1{display:grid;grid-template-rows:64px 124px;gap:12px}
+.panel{position:relative;background:var(--panel-bg);border:var(--panel-border);border-radius:var(--panel-radius);box-shadow:var(--panel-shadow)}
+.sketch,.squiggle{position:absolute;left:0;top:0;display:none;color:var(--fg);pointer-events:none}
+.lbl{font-family:var(--label-font);font-size:var(--label-size);font-weight:800;letter-spacing:var(--label-tracking);color:var(--label-color);line-height:1;text-transform:uppercase}
+.num{font-family:var(--font-num);letter-spacing:var(--num-tracking);font-variant-numeric:tabular-nums;line-height:1}
+/* logo slot */
+.logo{display:flex;align-items:center;justify-content:center;gap:12px;color:var(--fg);overflow:hidden}
+.logo .ic{width:40px;height:40px;flex:none}
+.logo .wm{height:20px;width:auto}
+.logo .live{display:none}
+/* step */
+.step{display:flex;flex-direction:column;justify-content:center;padding:0 24px;gap:10px}
+.step .val{font-size:72px;color:var(--step-color);text-shadow:var(--step-shadow);white-space:nowrap}
+.step .val i{font-style:normal;opacity:.55;margin:0 4px}
+.step .val .t{font-size:.62em}
+/* name */
+.title{display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 28px;gap:12px;text-align:center}
+.name{font-family:var(--font-head);font-weight:var(--head-weight);font-size:76px;line-height:1.05;color:var(--name-color);text-shadow:var(--name-shadow);white-space:nowrap;transform:skewX(var(--name-skew));max-width:100%}
+.sub{font-size:32px;line-height:1.2;font-weight:600;color:var(--muted);white-space:nowrap}
+.title .squiggle{top:auto;bottom:24px;left:50%;margin-left:-160px}
+/* timer */
+.timer{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px}
+.timer .val{display:block;flex:none;width:max-content;font-size:120px;color:var(--timer-color);text-shadow:var(--timer-shadow);white-space:nowrap}
+.timer .val .d{display:inline-block}
+/* next */
+.next{display:grid;grid-template-columns:192px 1fr;grid-template-rows:auto 1fr;column-gap:20px;row-gap:14px;padding:18px 22px}
+.next .tag{grid-column:1 / -1;justify-self:start;height:42px;padding:0 18px;display:inline-flex;align-items:center;border-radius:var(--tag-radius);
+  background:var(--tag-bg);color:var(--tag-fg);font-family:var(--label-font);font-size:24px;font-weight:800;letter-spacing:.12em}
+.thumb{position:relative;width:192px;height:108px}
+.thumb img{display:block;width:192px;height:108px;object-fit:cover;background:#fff}
+.thumb .tf{position:absolute;inset:-6px;border:6px solid var(--panel-bg-solid,#120A2E);border-radius:calc(var(--thumb-radius) + 6px)}
+.thumb .tf::after{content:"";position:absolute;inset:0;border:var(--thumb-line);border-radius:var(--thumb-radius)}
+.ninfo{display:flex;flex-direction:column;justify-content:center;gap:8px;min-width:0}
+.ninfo b{font-family:var(--font-head);font-weight:var(--head-weight);font-size:34px;line-height:1.15;color:var(--fg);word-break:keep-all}
+.ninfo small{font-size:22px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--muted)}
+/* progress */
+.prog{position:absolute;left:48px;top:244px;width:1824px;height:12px;background:var(--bar-track);border:var(--bar-border);border-radius:var(--bar-radius);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--bar-fill);border-radius:var(--bar-radius)}
+/* gutters */
+.gut{position:absolute;top:272px;width:191px;height:784px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;text-align:center}
+.gut.l{left:48px}.gut.r{left:1681px}
+.gut .big{font-size:76px;color:var(--fg)}
+.gut .big small{font-size:.45em;color:var(--muted);margin-left:2px}
+.gut .sep{width:72px;height:4px;border-radius:2px;background:var(--muted);opacity:.35}
+.gauge{position:relative;width:56px;height:520px;background:var(--gauge-track);border-radius:12px;overflow:hidden}
+.gauge i{position:absolute;left:0;right:0;bottom:0;background:var(--gauge-fill)}
+.gauge::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 calc(52px - var(--gauge-seg)),var(--gauge-gap,transparent) calc(52px - var(--gauge-seg)) 52px)}
+.gut .pct{font-size:44px;color:var(--fg)}
+/* video box: rect video, opaque rounded ring on top hides the corners (ring >= .42 x radius) */
+.vbox{position:absolute;left:263px;top:272px;width:1394px;height:784px}
+.video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#fff;display:block}
+.vframe{position:absolute;inset:calc(-1 * var(--ring-w));border:var(--ring-w) solid var(--ring-color);border-radius:calc(var(--video-radius) + var(--ring-w));box-shadow:var(--frame-glow);pointer-events:none}
+.vframe::after{content:"";position:absolute;inset:0;border:var(--frame-line);border-radius:var(--video-radius)}
+.vbox > .sketch{z-index:3}
+/* state overlays inside the video box */
+.ov{position:absolute;inset:0;display:none;background:var(--scrim);color:var(--state-color);font-family:var(--state-font)}
+.stage[data-state=countdown] .ov.cd,.stage[data-state=rest] .ov.rs,.stage[data-state=complete] .ov.cp{display:flex}
+.ov .t1 em{font-style:normal}
+.ov .t1{font-family:var(--state-font);font-weight:var(--head-weight);color:var(--state-color);text-shadow:var(--state-shadow);line-height:1.15;word-break:keep-all}
+.ov .n1{font-family:var(--font-num);color:var(--state-num-color);text-shadow:var(--state-num-shadow);line-height:.9}
+.chips{display:flex;gap:16px;justify-content:center;width:1240px}
+.chip{display:inline-flex;align-items:center;gap:14px;height:88px;padding:0 18px 0 12px;flex:1;min-width:0;border-radius:var(--chip-radius);background:var(--chip-bg);border:var(--chip-border);color:var(--chip-fg);font-size:32px;font-weight:800;font-family:var(--font-head);line-height:1.1;word-break:keep-all;text-align:left}
+.chip em{font-style:normal;flex:none;width:46px;height:46px;border-radius:var(--chip-radius);display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font-family:var(--font-num);font-size:26px}
+.cd{flex-direction:column;align-items:center;justify-content:center;gap:28px;text-align:center}
+.cd .n1{font-size:300px}
+.cd .t1{font-size:64px;max-width:1200px}
+.rs{flex-direction:column;justify-content:center;padding:0 96px;gap:24px;background:linear-gradient(90deg,var(--scrim) 0%,var(--scrim) 48%,transparent 78%)}
+.rs .row{display:flex;align-items:flex-end;gap:36px}
+.rs .n1{font-size:260px}
+.rs .t1{font-size:96px}
+.rs .hint{font-size:36px;font-weight:600;color:var(--muted)}
+.rs .nx{display:inline-flex;align-items:center;gap:18px;font-size:40px;font-weight:800;font-family:var(--font-head)}
+.rs .nx .tag{height:52px;padding:0 20px;display:inline-flex;align-items:center;border-radius:var(--tag-radius);background:var(--tag-bg);color:var(--tag-fg);font-family:var(--label-font);font-size:28px;letter-spacing:.12em}
+.cp{flex-direction:column;align-items:center;justify-content:center;gap:36px;text-align:center;background:var(--bg);background-image:var(--bg-image)}
+.cp .t1{font-size:132px}
+.cp .t2{font-size:44px;font-weight:600;color:var(--muted)}
+.stats{display:flex;gap:24px}
+.stat{min-width:260px;padding:26px 32px;border-radius:var(--panel-radius);background:var(--panel-bg);border:var(--panel-border);position:relative}
+.stat .n1{font-size:84px;display:block}
+.stat span{display:block;margin-top:12px;font-size:28px;font-weight:800;color:var(--muted)}
+.cp .badge{display:none}
+
+/* ---------- decoration slots (each skin styles its own; default hidden) ---------- */
+.deco{position:absolute;display:none;pointer-events:none}
+
+/* =====================================================================
+   SKIN 1 · neon-arcade (baseline — tokens are the defaults above)
+   ===================================================================== */
+[data-skin=neon-arcade] .scan{display:block;left:0;top:0;width:1920px;height:1080px;background:linear-gradient(transparent 0 50%,rgba(255,255,255,.035) 50% 100%);background-size:100% 4px}
+[data-skin=neon-arcade] .floor{display:block;left:0;bottom:0;width:1920px;height:300px;
+  background:linear-gradient(0deg,rgba(255,43,214,.18),transparent),repeating-linear-gradient(90deg,rgba(0,240,255,.14) 0 2px,transparent 2px 96px)}
+[data-skin=neon-arcade] .gut .big{color:#fff;text-shadow:0 0 12px rgba(0,240,255,.7)}
+
+/* =====================================================================
+   SKIN 2 · iron-gym — brushed steel, diamond plate, hazard orange, heavy angular type
+   ===================================================================== */
+[data-skin=iron-gym]{
+  --bg:#202428; --bg-image:url(assets/tex-steel.png);
+  --fg:#F3F5F6; --muted:#A7B0B8;
+  --primary:#FF6A00; --secondary:#C9CFD5; --accent:#FFC21A; --on-accent:#111315;
+  --font-head:"MO BlackHan"; --head-weight:400; --font-num:"MO ArchivoX"; --num-tracking:-.02em;
+  --panel-bg:linear-gradient(180deg,#3B4147 0%,#2A2F34 100%); --panel-border:2px solid #0F1113; --panel-radius:4px;
+  --panel-shadow:inset 0 2px 0 rgba(255,255,255,.16),inset 0 -3px 0 rgba(0,0,0,.35),0 6px 0 #0F1113;
+  --label-color:#FFC21A; --label-font:"MO ArchivoX"; --label-size:20px; --label-tracking:.08em;
+  --step-color:#FFFFFF; --step-shadow:0 4px 0 #000;
+  --name-color:#FFFFFF; --name-shadow:0 5px 0 #000; --name-skew:0deg;
+  --timer-color:#FF6A00; --timer-shadow:0 5px 0 #000;
+  --tag-bg:#FFC21A; --tag-fg:#111315; --tag-radius:2px;
+  --bar-track:#111315; --bar-border:2px solid #0A0B0C; --bar-radius:2px;
+  --bar-fill:repeating-linear-gradient(-45deg,#FF6A00 0 18px,#111315 18px 36px);
+  --video-radius:12px; --ring-w:10px; --ring-color:#16191C; --frame-line:5px solid #FF6A00; --frame-glow:0 8px 0 #0A0B0C;
+  --thumb-radius:3px; --thumb-line:3px solid #FFC21A;
+  --scrim:rgba(17,19,21,.84);
+  --state-font:"MO BlackHan"; --state-color:#FFFFFF; --state-shadow:0 6px 0 #000;
+  --state-num-color:#FF6A00; --state-num-shadow:0 8px 0 #000;
+  --chip-bg:#2A2F34; --chip-fg:#fff; --chip-border:2px solid #0F1113; --chip-radius:3px;
+  --gauge-track:#111315; --gauge-fill:#FF6A00; --gauge-seg:8px; --gauge-gap:#202428;
+}
+[data-skin=iron-gym] .panel{clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px)}
+[data-skin=iron-gym] .stat{clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px)}
+[data-skin=iron-gym] .thumb .tf{border-color:#2E3338}
+[data-skin=iron-gym] .plate{display:block;left:0;bottom:0;width:1920px;height:120px;background:#2A2F34 url(assets/tex-diamond.png);border-top:3px solid #0F1113;opacity:.9}
+[data-skin=iron-gym] .hz-l,[data-skin=iron-gym] .hz-r{display:block;top:272px;width:20px;height:784px;background:repeating-linear-gradient(-45deg,#FFC21A 0 22px,#111315 22px 44px);border:2px solid #0F1113}
+[data-skin=iron-gym] .hz-l{left:14px}[data-skin=iron-gym] .hz-r{right:14px}
+[data-skin=iron-gym] .bolt{display:block;width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#E2E6EA 0 2px,#8A939B 3px,#3A4046 8px);box-shadow:0 2px 0 #000}
+[data-skin=iron-gym] .b1{left:236px;top:256px}[data-skin=iron-gym] .b2{left:1668px;top:256px}[data-skin=iron-gym] .b3{left:236px;top:1040px}[data-skin=iron-gym] .b4{left:1668px;top:1040px}
+[data-skin=iron-gym] .timer .val{font-family:"MO ArchivoC"}
+[data-skin=iron-gym] .step .val .t{color:#A7B0B8}
+[data-skin=iron-gym] .gut .big{text-shadow:0 4px 0 #000}
+[data-skin=iron-gym] .chip em{border-radius:2px}
+[data-skin=iron-gym] .cp .badge{display:block;position:absolute;top:56px;left:50%;margin-left:-220px;width:440px;height:28px;background:repeating-linear-gradient(-45deg,#FFC21A 0 22px,#111315 22px 44px)}
+
+/* =====================================================================
+   SKIN 3 · live-broadcast — sports scorebug, lower-third plates, LIVE badge
+   ===================================================================== */
+[data-skin=live-broadcast]{
+  --bg:#081634; --bg-image:repeating-linear-gradient(115deg,rgba(255,255,255,.025) 0 2px,transparent 2px 16px),linear-gradient(180deg,#0C1F4A 0%,#050C20 100%);
+  --fg:#FFFFFF; --muted:#A9BBE0;
+  --primary:#E10600; --secondary:#1F52FF; --accent:#FFC72C; --on-accent:#081634;
+  --font-head:"MO Pretendard"; --head-weight:800; --font-num:"MO ArchivoC"; --num-tracking:.01em;
+  --panel-bg:#0F2557; --panel-border:0; --panel-radius:6px; --panel-shadow:inset 0 4px 0 #1F52FF,0 6px 16px rgba(0,0,0,.35);
+  --label-color:#A9BBE0; --label-font:"MO ArchivoC"; --label-size:24px; --label-tracking:.12em;
+  --step-color:#FFFFFF; --step-shadow:none;
+  --name-color:#081634; --name-shadow:none;
+  --timer-color:#FFC72C; --timer-shadow:none;
+  --tag-bg:#1F52FF; --tag-fg:#FFFFFF; --tag-radius:3px;
+  --bar-track:#13285C; --bar-border:0; --bar-radius:2px; --bar-fill:linear-gradient(90deg,#E10600 0%,#E10600 calc(100% - 24px),#FFC72C calc(100% - 24px));
+  --video-radius:16px; --ring-w:8px; --ring-color:#081634; --frame-line:3px solid #FFFFFF; --frame-glow:0 12px 32px rgba(0,0,0,.45);
+  --thumb-radius:4px; --thumb-line:3px solid #FFFFFF;
+  --scrim:rgba(5,12,32,.84);
+  --state-font:"MO Pretendard"; --state-color:#FFFFFF; --state-shadow:none;
+  --state-num-color:#FFC72C; --state-num-shadow:none;
+  --chip-bg:#FFFFFF; --chip-fg:#081634; --chip-border:0; --chip-radius:4px;
+  --gauge-track:#13285C; --gauge-fill:linear-gradient(0deg,#E10600,#FFC72C); --gauge-seg:0px;
+}
+/* name = white lower-third plate with red tab */
+[data-skin=live-broadcast] .title{background:#FFFFFF;box-shadow:inset 16px 0 0 #E10600,0 6px 16px rgba(0,0,0,.35)}
+[data-skin=live-broadcast] .sub{color:#4A5B80}
+[data-skin=live-broadcast] .title .sub{font-family:"MO Pretendard"}
+/* scorebug timer: digit cells */
+[data-skin=live-broadcast] .timer{background:#050912;box-shadow:inset 0 4px 0 #E10600,0 6px 16px rgba(0,0,0,.35)}
+[data-skin=live-broadcast] .timer .val{font-size:112px}
+[data-skin=live-broadcast] .timer .val .d{background:#14203D;border-radius:6px;padding:6px 6px 4px;margin:0 3px;min-width:68px;text-align:center}
+[data-skin=live-broadcast] .timer .val .c{margin:0 2px;color:#fff}
+[data-skin=live-broadcast] .logo{justify-content:flex-start;padding-left:14px;gap:10px}
+[data-skin=live-broadcast] .logo .wm{height:16px}
+[data-skin=live-broadcast] .logo .ic{width:34px;height:34px}
+[data-skin=live-broadcast] .logo .live{display:inline-flex;align-items:center;gap:6px;margin-left:auto;margin-right:10px;height:34px;padding:0 10px;border-radius:3px;background:#E10600;color:#fff;font-family:"MO ArchivoC";font-size:22px;letter-spacing:.08em}
+[data-skin=live-broadcast] .logo .live::before{content:"";width:10px;height:10px;border-radius:50%;background:#fff;animation:blink 1.2s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
+[data-skin=live-broadcast] .step .val .t{color:#A9BBE0}
+[data-skin=live-broadcast] .chip em{background:#E10600;color:#fff;border-radius:3px}
+[data-skin=live-broadcast] .stat{box-shadow:inset 0 4px 0 #E10600}
+[data-skin=live-broadcast] .ticker{display:flex;left:263px;top:1000px;width:1394px;height:56px;align-items:center;z-index:2}
+[data-skin=live-broadcast] .ticker b{height:56px;display:flex;align-items:center;padding:0 22px;background:#E10600;color:#fff;font-family:"MO ArchivoC";font-size:28px;letter-spacing:.1em}
+[data-skin=live-broadcast] .ticker span{height:56px;flex:1;display:flex;align-items:center;padding:0 24px;background:rgba(5,12,32,.92);color:#fff;font-size:28px;font-weight:600}
+[data-skin=live-broadcast] .ticker i{font-style:normal;color:#FFC72C;margin:0 14px}
+[data-skin=live-broadcast] .stage-tag{display:block}
+
+/* =====================================================================
+   SKIN 4 · power-energy — hot gradient, diagonal stripes, energy gauge
+   ===================================================================== */
+[data-skin=power-energy]{
+  --bg:#FF4A1C; --bg-image:repeating-linear-gradient(-60deg,rgba(255,255,255,.07) 0 40px,transparent 40px 120px),linear-gradient(115deg,#FF1F5A 0%,#FF5A12 48%,#FFB800 100%);
+  --fg:#FFFFFF; --muted:#FFE2CF;
+  --primary:#FFE600; --secondary:#111111; --accent:#FFE600; --on-accent:#111111;
+  --font-head:"MO Pretendard"; --head-weight:800; --font-num:"MO ArchivoI"; --num-tracking:-.02em;
+  --panel-bg:#111111; --panel-border:0; --panel-radius:26px; --panel-shadow:0 10px 0 rgba(0,0,0,.25);
+  --label-color:#FFE600; --label-font:"MO ArchivoI"; --label-size:24px; --label-tracking:.06em;
+  --step-color:#FFFFFF; --step-shadow:none;
+  --name-color:#FFFFFF; --name-shadow:none; --name-skew:-8deg;
+  --timer-color:#FFE600; --timer-shadow:none;
+  --tag-bg:#FFE600; --tag-fg:#111111; --tag-radius:10px;
+  --bar-track:rgba(17,17,17,.55); --bar-border:0; --bar-radius:6px; --bar-fill:#FFE600;
+  --video-radius:40px; --ring-w:18px; --ring-color:#111111; --frame-line:6px solid #FFE600; --frame-glow:0 14px 0 rgba(0,0,0,.22);
+  --thumb-radius:14px; --thumb-line:4px solid #FFE600;
+  --scrim:rgba(17,17,17,.80);
+  --state-font:"MO Pretendard"; --state-color:#FFFFFF; --state-shadow:none;
+  --state-num-color:#FFE600; --state-num-shadow:none;
+  --chip-bg:#FFFFFF; --chip-fg:#111111; --chip-border:0; --chip-radius:16px;
+  --gauge-track:rgba(17,17,17,.6); --gauge-fill:linear-gradient(0deg,#FFE600,#FFF6A0); --gauge-seg:10px; --gauge-gap:#111111;
+}
+[data-skin=power-energy] .thumb .tf{border-color:#111}
+[data-skin=power-energy] .prog::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 50px,#111 50px 56px)}
+[data-skin=power-energy] .prog{overflow:hidden}
+[data-skin=power-energy] .gauge{border-radius:14px;border:5px solid #111;width:72px}
+[data-skin=power-energy] .gut .big{color:#111;}
+[data-skin=power-energy] .gut .big small{color:#3A1A00}
+[data-skin=power-energy] .gut .lbl{color:#111}
+[data-skin=power-energy] .gut .pct{color:#111}
+[data-skin=power-energy] .gut .sep{background:#111;opacity:.5}
+[data-skin=power-energy] .slash1{display:block;left:-60px;top:820px;width:360px;height:44px;background:#FFE600;transform:rotate(-30deg)}
+[data-skin=power-energy] .slash2{display:block;right:-80px;top:180px;width:300px;height:22px;background:#111;transform:rotate(-30deg);opacity:.85}
+[data-skin=power-energy] .ov .t1{transform:skewX(-8deg)}
+[data-skin=power-energy] .chip{transform:skewX(-8deg)}
+[data-skin=power-energy] .chip em{border-radius:10px;background:#111;color:#FFE600}
+[data-skin=power-energy] .cp .t1{color:#111;-webkit-text-stroke:0}
+[data-skin=power-energy] .cp .t2{color:#111}
+[data-skin=power-energy] .cp .t1 em{font-style:normal;background:#111;color:#FFE600;padding:0 28px;border-radius:24px}
+[data-skin=power-energy] .bolt-ic{display:block}
+
+/* =====================================================================
+   SKIN 5 · wod-chalkboard — slate texture, chalk handwriting, hand-drawn borders
+   ===================================================================== */
+[data-skin=wod-chalkboard]{
+  --bg:#24312B; --bg-image:url(assets/tex-chalkboard.png);
+  --fg:#F4F1E6; --muted:#C6CEC3;
+  --primary:#FFE58A; --secondary:#FF9DB4; --accent:#9EDBFF; --on-accent:#1E2A24;
+  --font-head:"MO Gaegu"; --head-weight:700; --font-num:"MO Gaegu"; --num-tracking:0;
+  --panel-bg:transparent; --panel-border:0; --panel-radius:0; --panel-shadow:none;
+  --label-color:#9EDBFF; --label-font:"MO Gaegu"; --label-size:30px; --label-tracking:.02em;
+  --step-color:#F4F1E6; --step-shadow:none;
+  --name-color:#F4F1E6; --name-shadow:none;
+  --timer-color:#FFE58A; --timer-shadow:none;
+  --tag-bg:transparent; --tag-fg:#FF9DB4; --tag-radius:0;
+  --bar-track:transparent; --bar-border:0; --bar-radius:6px; --bar-fill:#FFE58A;
+  --video-radius:20px; --ring-w:10px; --ring-color:#24312B; --frame-line:0 solid transparent; --frame-glow:none;
+  --thumb-radius:8px; --thumb-line:0 solid transparent;
+  --scrim:rgba(30,42,36,.88);
+  --state-font:"MO Gaegu"; --state-color:#F4F1E6; --state-shadow:none;
+  --state-num-color:#FFE58A; --state-num-shadow:none;
+  --chip-bg:transparent; --chip-fg:#F4F1E6; --chip-border:3px dashed rgba(244,241,230,.75); --chip-radius:14px;
+  --gauge-track:transparent; --gauge-fill:#FFE58A; --gauge-seg:12px; --gauge-gap:#24312B;
+}
+[data-skin=wod-chalkboard] .sketch,[data-skin=wod-chalkboard] .squiggle{display:block}
+[data-skin=wod-chalkboard] .title .squiggle{color:#FF9DB4}
+[data-skin=wod-chalkboard] .timer .sketch{color:#FFE58A}
+[data-skin=wod-chalkboard] .stage{}
+[data-skin=wod-chalkboard] .name{font-size:84px}
+[data-skin=wod-chalkboard] .sub,[data-skin=wod-chalkboard] .ninfo small,[data-skin=wod-chalkboard] .rs .hint,[data-skin=wod-chalkboard] .cp .t2,[data-skin=wod-chalkboard] .stat span{font-family:"MO Gaegu";font-weight:700}
+[data-skin=wod-chalkboard] .sub{font-size:36px}
+[data-skin=wod-chalkboard] .timer .val{font-size:136px}
+[data-skin=wod-chalkboard] .step .val{font-size:84px}
+[data-skin=wod-chalkboard] .next .tag{padding:0;font-size:34px;height:36px;border-bottom:4px solid #FF9DB4;border-radius:0}
+[data-skin=wod-chalkboard] .next .tag::after{content:" →"}
+[data-skin=wod-chalkboard] .ninfo b{font-size:32px;line-height:1.0}
+[data-skin=wod-chalkboard] .ninfo small{font-size:24px;line-height:1.0}
+[data-skin=wod-chalkboard] .thumb .tf{border-color:#24312B}
+[data-skin=wod-chalkboard] .prog{border-top:3px dashed rgba(244,241,230,.55);border-bottom:3px dashed rgba(244,241,230,.55);height:14px;border-radius:0}
+[data-skin=wod-chalkboard] .prog i{opacity:.92;border-radius:2px}
+[data-skin=wod-chalkboard] .gauge{border:3px solid rgba(244,241,230,.85);border-radius:10px}
+[data-skin=wod-chalkboard] .gut .big{font-size:88px}
+[data-skin=wod-chalkboard] .gut .sep{height:0;border-top:4px dashed var(--muted);background:none}
+[data-skin=wod-chalkboard] .rs .nx .tag{border-bottom:4px solid #FF9DB4;border-radius:0;padding:0;font-size:40px}
+[data-skin=wod-chalkboard] .chip{font-size:34px}
+[data-skin=wod-chalkboard] .chip em{background:transparent;color:#FFE58A;border:3px solid #FFE58A;border-radius:50%;font-size:30px}
+[data-skin=wod-chalkboard] .stat{border:3px dashed rgba(244,241,230,.7);border-radius:16px}
+[data-skin=wod-chalkboard] .wood{display:block;left:0;top:0;width:1920px;height:1080px;box-shadow:inset 0 0 0 12px #6E4B2C,inset 0 0 0 16px #4A311B}
+[data-skin=wod-chalkboard] .tray{display:block;left:0;bottom:0;width:1920px;height:16px;background:#4A311B}
+[data-skin=wod-chalkboard] .doodle{display:block;color:rgba(244,241,230,.5);font-family:"MO Gaegu";font-weight:700}
+[data-skin=wod-chalkboard] .ov .t1 em{font-style:normal;color:#FFE58A}
+
+/* stage-tag: small broadcast-only info chip inside the video (top-left) */
+.stage-tag{left:263px;top:272px}
+/* ---------- control bar (preview only, hidden with ?ui=0 or H) ---------- */
+.ctrl{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;gap:6px;padding:8px;border-radius:14px;background:rgba(11,13,12,.92);color:#fff;font:600 13px/1 "MO Pretendard",system-ui,sans-serif;z-index:10;align-items:center}
+.ctrl button{white-space:nowrap;height:32px;padding:0 12px;border-radius:8px;border:0;background:transparent;color:#C9CFCB;font:inherit;cursor:pointer}
+.ctrl button.on{background:#C8F31D;color:#0B0D0C}
+.ctrl .sep{width:1px;height:20px;background:#3F4642;margin:0 4px}
+.ctrl kbd{font-size:11px;color:#6E7771;margin-left:6px}
+.hide-ui .ctrl{display:none}
+</style>
+</head>
+<body>
+<div class="stage" id="stage" data-skin="neon-arcade" data-state="exercise">
+  <!-- background decoration slots -->
+  <div class="deco scan"></div><div class="deco floor"></div>
+  <div class="deco plate"></div><div class="deco hz-l"></div><div class="deco hz-r"></div>
+  <div class="deco slash1"></div><div class="deco slash2"></div>
+  <div class="deco wood"></div><div class="deco tray"></div>
+
+  <header class="top">
+    <div class="c1">
+      <div class="panel logo">
+        <svg class="sketch" width="240" height="64" viewBox="0 0 240 64" aria-hidden="true"><path d="M4.2 21.7Q4.6 8.2 21.3 4.8L87.5 6.9L153.8 3.4L220.0 5.7Q231.6 6.2 234.8 21.4L231.4 31.3L232.0 41.6Q233.4 56.6 221.7 57.7L154.9 57.3L88.1 58.3L21.3 55.5Q4.6 57.7 5.7 45.1L4.9 33.4L4.2 21.7Q4.7 4.7 21.3 4.8M4.6 19.8Q7.7 6.9 18.9 3.6L86.5 3.6L154.1 5.8L221.7 6.3Q235.9 7.7 234.7 18.4L235.6 32.1L236.5 45.8Q234.4 55.7 218.1 57.2L152.4 58.9L86.8 57.1L21.1 59.1Q5.6 56.4 8.2 43.6L6.6 31.7L4.6 19.8Q7.0 6.9 18.9 3.6" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/></svg>
+        <svg class="ic" viewBox="0 0 96 96" aria-hidden="true"><rect width="96" height="96" rx="22" fill="#C8F31D"/><path fill="#0B0D0C" d="M15 30H33L47.5 58L66 17H85L56.5 80H40Z"/></svg>
+        <svg class="wm" viewBox="0 0 264 40" aria-label="MOVE ON" fill="currentColor"><path  d="M3.5 38.5V8.3H16.2L20.6 21.6Q20.9 22.4 21.2 23.6Q21.6 24.8 22 26.1Q22.3 27.4 22.6 28.4H22.9Q23.2 27.6 23.5 26.4Q23.8 25.2 24.2 23.9Q24.6 22.6 24.9 21.6L29.3 8.3H41.6V38.5H33.4V24.3Q33.4 22.9 33.4 21.3Q33.4 19.8 33.5 18.4Q33.5 17.1 33.5 16.3H33.2Q33 17.1 32.6 18.3Q32.3 19.5 31.9 20.7Q31.6 22 31.3 22.9L26 38.5H18.7L13.4 22.9Q13 21.8 12.7 20.6Q12.3 19.4 12 18.3Q11.7 17.1 11.5 16.3H11.1Q11.2 17.2 11.2 18.6Q11.2 20 11.3 21.4Q11.3 22.9 11.3 24.3V38.5ZM65.5 39.1Q60 39.1 56 37.3Q52.1 35.5 49.9 32Q47.8 28.5 47.8 23.4Q47.8 18.3 49.9 14.8Q52.1 11.3 56 9.5Q60 7.8 65.5 7.8Q71.1 7.8 75.1 9.5Q79 11.3 81.2 14.8Q83.3 18.3 83.3 23.4Q83.3 28.5 81.2 32Q79 35.5 75.1 37.3Q71.1 39.1 65.5 39.1ZM65.5 32.7Q67.7 32.7 69.4 32.1Q71 31.5 72.2 30.4Q73.4 29.3 74.1 27.7Q74.7 26.1 74.7 24.2V22.6Q74.7 20.6 74.1 19.1Q73.4 17.5 72.2 16.4Q71 15.3 69.4 14.7Q67.7 14.2 65.5 14.2Q63.4 14.2 61.7 14.7Q60 15.3 58.8 16.4Q57.6 17.5 57 19.1Q56.4 20.6 56.4 22.6V24.2Q56.4 26.1 57 27.7Q57.6 29.3 58.8 30.4Q60 31.5 61.7 32.1Q63.4 32.7 65.5 32.7Z"/><path  transform="translate(74.9 -9.8) scale(0.7 0.6)" d="M15 30H33L47.5 58L66 17H85L56.5 80H40Z"/><path  d="M141.9 38.5V8.3H170V14.7H150.3V20.1H167.5V26.3H150.3V32.1H170.3V38.5ZM204.2 39.1Q198.7 39.1 194.7 37.3Q190.7 35.5 188.5 32Q186.4 28.5 186.4 23.4Q186.4 18.3 188.5 14.8Q190.7 11.3 194.7 9.5Q198.7 7.8 204.2 7.8Q209.7 7.8 213.7 9.5Q217.7 11.3 219.8 14.8Q221.9 18.3 221.9 23.4Q221.9 28.5 219.8 32Q217.7 35.5 213.7 37.3Q209.7 39.1 204.2 39.1ZM204.2 32.7Q206.3 32.7 208 32.1Q209.7 31.5 210.9 30.4Q212.1 29.3 212.7 27.7Q213.3 26.1 213.3 24.2V22.6Q213.3 20.6 212.7 19.1Q212.1 17.5 210.9 16.4Q209.7 15.3 208 14.7Q206.3 14.2 204.2 14.2Q202 14.2 200.3 14.7Q198.7 15.3 197.5 16.4Q196.3 17.5 195.7 19.1Q195 20.6 195 22.6V24.2Q195 26.1 195.7 27.7Q196.3 29.3 197.5 30.4Q198.7 31.5 200.3 32.1Q202 32.7 204.2 32.7ZM228.1 38.5V8.3H235.5L248.8 22.4Q249.1 22.7 249.7 23.4Q250.3 24 250.8 24.7Q251.4 25.3 251.8 25.8L252.1 25.8Q252.1 24.9 252.1 23.9Q252.1 22.8 252.1 22.1V8.3H259.9V38.5H252.5L239.1 24.2Q238.3 23.4 237.5 22.5Q236.7 21.5 236.2 20.9L235.9 21Q235.9 21.6 235.9 22.6Q235.9 23.6 235.9 24.6V38.5Z"/></svg>
+        <span class="live">LIVE</span>
+      </div>
+      <div class="panel step"><svg class="sketch" width="240" height="124" viewBox="0 0 240 124" aria-hidden="true"><path d="M8.3 22.2Q8.2 6.2 17.8 3.9L85.8 4.8L153.7 5.1L221.7 7.2Q231.7 3.6 234.8 19.0L234.8 61.8L234.5 104.5Q233.1 117.4 220.4 116.3L153.5 115.0L86.6 117.0L19.7 117.5Q6.3 116.7 7.1 106.5L5.6 64.3L8.3 22.2Q5.1 4.2 17.8 3.9M6.1 22.5Q5.8 6.2 20.9 4.4L87.9 5.4L154.9 8.3L222.0 7.5Q234.0 7.7 235.2 22.0L235.9 63.7L235.3 105.4Q235.9 120.0 219.3 120.4L153.6 119.2L88.0 117.4L22.3 116.3Q8.1 119.1 7.3 105.1L6.6 63.8L6.1 22.5Q4.6 5.1 20.9 4.4" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/></svg><span class="lbl" id="stepLbl">STEP</span><span class="val num"><b id="stepN">1</b><i>/</i><span class="t" id="stepT">3</span></span></div>
+    </div>
+    <div class="panel title"><svg class="sketch" width="742" height="200" viewBox="0 0 742 200" aria-hidden="true"><path d="M4.7 20.2Q6.7 7.8 19.3 6.5L83.3 6.4L147.2 7.1L211.2 6.5L275.1 3.6L339.0 6.4L403.0 5.5L466.9 3.9L530.8 2.5L594.8 5.9L658.7 4.0L722.6 3.8Q737.1 7.9 733.6 21.7L733.2 100.2L734.8 178.7Q738.1 193.5 724.5 193.9L660.6 192.5L596.7 194.1L532.8 191.9L468.9 192.2L405.0 195.6L341.1 195.5L277.2 195.1L213.4 191.8L149.5 194.2L85.6 193.3L21.7 193.9Q5.0 194.0 6.7 178.3L5.2 99.2L4.7 20.2Q5.3 6.4 19.3 6.5M6.4 22.0Q4.9 3.8 20.9 8.1L84.8 9.7L148.7 10.4L212.6 6.4L276.5 9.6L340.4 7.9L404.3 6.8L468.2 7.4L532.1 9.6L596.0 10.0L659.9 6.4L723.8 8.5Q736.6 3.7 736.9 18.3L736.4 100.3L737.8 182.3Q735.2 195.9 724.0 194.3L660.1 192.1L596.2 194.0L532.3 191.7L468.4 194.5L404.5 195.4L340.6 192.9L276.7 195.3L212.8 194.4L148.9 193.3L85.0 192.2L21.1 192.6Q4.3 191.7 7.7 180.4L8.7 101.2L6.4 22.0Q5.1 8.3 20.9 8.1" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/></svg><div class="name" id="name">덤벨 숄더 프레스</div><div class="sub" id="sub">A 그룹 · 어깨</div><svg class="squiggle" width="320" height="20" viewBox="0 0 320 20" aria-hidden="true"><path d="M4 9.9L24 9.1L44 7.5L64 12.6L84 6.5L104 10.0L124 12.8L144 7.1L164 10.4L184 10.8L204 6.8L224 9.2L244 11.4L264 9.7L284 11.6L304 7.6" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="panel timer"><svg class="sketch" width="330" height="200" viewBox="0 0 330 200" aria-hidden="true"><path d="M4.7 18.0Q7.6 7.5 19.5 4.3L91.6 5.9L163.7 3.5L235.7 4.4L307.8 5.5Q324.6 7.2 326.1 21.5L324.1 100.0L325.3 178.6Q325.9 191.9 310.2 192.9L237.2 192.2L164.3 191.7L91.3 192.2L18.4 192.0Q4.4 193.9 4.6 182.1L2.8 100.1L4.7 18.0Q8.2 7.8 19.5 4.3M6.2 19.0Q4.9 6.2 22.0 6.4L94.5 6.6L167.0 6.4L239.4 9.6L311.9 7.7Q322.5 5.6 324.0 19.6L325.6 99.6L324.5 179.7Q324.7 192.9 308.3 193.0L236.6 193.3L164.9 191.3L93.2 192.8L21.6 191.7Q6.3 196.0 3.7 180.6L3.2 99.8L6.2 19.0Q3.8 4.6 22.0 6.4" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/></svg><span class="lbl" id="timerLbl">남은 시간</span><span class="val num" id="timer">00:37</span></div>
+    <div class="panel next"><svg class="sketch" width="440" height="200" viewBox="0 0 440 200" aria-hidden="true"><path d="M6.6 21.2Q3.6 4.6 21.5 8.2L88.1 7.2L154.7 10.0L221.3 9.3L288.0 6.6L354.6 9.4L421.2 8.1Q432.2 6.6 431.6 19.8L435.6 100.2L436.2 180.7Q431.5 195.9 422.0 192.1L355.0 193.5L288.0 193.5L220.9 190.3L153.9 190.9L86.9 193.5L19.8 192.7Q8.3 194.2 6.2 180.4L7.2 100.8L6.6 21.2Q4.5 8.2 21.5 8.2M7.0 22.3Q5.1 5.9 22.0 5.0L88.2 5.8L154.4 2.8L220.6 6.8L286.9 2.5L353.1 5.5L419.3 4.3Q435.7 3.6 432.2 17.8L431.4 99.2L433.0 180.5Q433.3 194.4 417.5 194.9L351.1 196.7L284.7 196.3L218.3 195.4L152.0 191.7L85.6 194.7L19.2 193.0Q7.3 196.1 7.6 179.9L9.2 101.1L7.0 22.3Q5.2 5.3 22.0 5.0" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/></svg>
+      <span class="tag" id="ntag">NEXT</span>
+      <div class="thumb"><img id="nimg" src="assets/ex-alt-press-thumb.jpg" alt=""><span class="tf"></span></div>
+      <div class="ninfo"><b id="nname">얼터네이트 숄더 프레스</b><small id="nmeta">휴식 후 · 좌우 10회</small></div>
+    </div>
+  </header>
+
+  <div class="prog"><i id="prog" style="width:18%"></i></div>
+
+  <aside class="gut l"><svg class="sketch" width="191" height="784" viewBox="0 0 191 784" aria-hidden="true"><path d="M7.5 21.6Q4.5 6.3 19.9 4.8L94.2 7.2L168.5 6.8Q183.8 7.5 184.9 21.3L184.0 83.3L183.3 145.3L185.5 207.3L186.5 269.3L183.3 331.3L183.3 393.3L184.8 455.3L186.3 517.3L185.8 579.3L183.9 641.3L185.3 703.3L184.4 765.4Q187.3 778.4 169.9 779.5L95.5 779.9L21.1 777.6Q6.8 777.3 6.2 764.9L8.2 703.0L8.2 641.0L6.6 579.1L7.3 517.1L7.6 455.2L8.2 393.3L9.0 331.3L5.0 269.4L6.5 207.4L7.7 145.5L6.5 83.6L7.5 21.6Q6.4 3.9 19.9 4.8M7.9 20.1Q6.6 5.0 18.1 6.8L94.1 5.1L170.1 4.5Q184.4 4.1 184.9 18.2L182.6 80.5L186.7 142.8L184.9 205.1L183.4 267.4L184.8 329.7L182.1 392.0L185.2 454.3L181.9 516.6L182.2 578.9L183.0 641.2L181.9 703.5L183.5 765.8Q184.7 779.7 172.0 775.6L96.7 774.3L21.4 775.6Q6.1 777.9 5.2 766.0L6.3 703.9L5.2 641.7L4.0 579.5L7.2 517.4L5.3 455.2L6.5 393.1L8.0 330.9L5.5 268.8L5.1 206.6L5.8 144.4L8.1 82.3L7.9 20.1Q5.3 4.8 18.1 6.8" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/></svg>
+    <span class="lbl">SET</span><span class="big num" id="setV">1<small>/3</small></span>
+    <span class="sep"></span>
+    <span class="lbl">횟수</span><span class="big num" id="repV">12<small>회</small></span>
+  </aside>
+  <aside class="gut r"><svg class="sketch" width="191" height="784" viewBox="0 0 191 784" aria-hidden="true"><path d="M5.1 18.3Q6.6 8.2 20.8 3.9L96.0 4.9L171.2 5.3Q184.5 8.4 182.8 20.0L184.8 82.0L181.2 144.0L183.7 205.9L184.3 267.9L184.4 329.9L183.6 391.9L181.3 453.8L184.1 515.8L182.4 577.8L182.1 639.7L183.3 701.7L182.7 763.7Q185.2 775.8 168.8 776.0L94.3 779.7L19.6 779.6Q4.5 778.9 4.1 762.6L3.9 700.6L3.5 638.6L4.7 576.5L4.2 514.5L3.7 452.5L5.9 390.4L5.6 328.4L3.7 266.4L5.2 204.3L5.1 142.3L6.7 80.3L5.1 18.3Q7.1 4.9 20.8 3.9M8.4 18.1Q7.7 8.2 19.6 7.3L94.4 6.5L169.3 5.9Q185.8 3.8 182.7 20.8L182.1 82.8L182.7 144.8L181.4 206.7L182.5 268.7L185.2 330.6L185.0 392.6L184.1 454.6L187.2 516.5L185.6 578.5L187.2 640.4L187.7 702.4L186.3 764.4Q182.8 779.3 172.9 777.1L96.9 779.4L21.0 778.5Q4.7 777.5 6.4 763.8L8.2 701.6L4.9 639.5L6.7 577.4L7.3 515.2L8.9 453.1L8.8 390.9L9.2 328.8L6.8 266.7L7.5 204.5L7.4 142.4L9.9 80.2L8.4 18.1Q8.3 4.3 19.6 7.3" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/></svg>
+    <span class="lbl" id="gLbl">TIME LEFT</span>
+    <div class="gauge"><i id="gauge" style="height:82%"></i></div>
+    <span class="pct num" id="gPct">82%</span>
+  </aside>
+
+  <section class="vbox">
+    <img class="video" id="video" src="assets/ex-shoulder-press.jpg" alt="">
+    <!-- start countdown -->
+    <div class="ov cd">
+      <span class="n1" id="cdNum">10</span>
+      <p class="t1"><em>10초</em> 뒤, 3가지 운동 루틴이<br>시작됩니다</p>
+      <div class="chips"><span class="chip"><em>1</em>덤벨 숄더 프레스</span><span class="chip"><em>2</em>얼터네이트 숄더 프레스</span><span class="chip"><em>3</em>고블릿 스쿼트</span></div>
+    </div>
+    <!-- rest -->
+    <div class="ov rs">
+      <p class="t1"><em>60초</em> 휴식</p>
+      <div class="row"><span class="n1">42</span><span class="hint" style="padding-bottom:36px">초 남았어요<br>물 한 모금, 호흡은 천천히</span></div>
+      <div class="nx"><span class="tag">NEXT</span>얼터네이트 숄더 프레스 · 좌우 10회</div>
+    </div>
+    <!-- complete -->
+    <div class="ov cp">
+      <span class="badge"></span>
+      <p class="t1"><em>운동 완료!</em></p>
+      <p class="t2">오늘도 해냈어요. 30분 동안 수고 많으셨어요</p>
+      <div class="stats">
+        <div class="stat"><span class="n1">3</span><span>가지 운동</span></div>
+        <div class="stat"><span class="n1">9</span><span>세트</span></div>
+        <div class="stat"><span class="n1">30:00</span><span>운동 시간</span></div>
+      </div>
+    </div>
+    <div class="vframe"></div>
+    <svg class="sketch" width="1394" height="784" viewBox="0 0 1394 784" aria-hidden="true"><path d="M4.6 22.3Q3.6 4.8 18.1 7.0L79.7 6.5L141.2 8.6L202.7 6.2L264.3 4.9L325.8 5.4L387.4 8.6L448.9 4.4L510.4 6.7L572.0 5.5L633.5 6.7L695.0 5.2L756.6 6.6L818.1 5.7L879.6 6.2L941.2 7.2L1002.7 5.7L1064.2 3.7L1125.8 3.2L1187.3 7.0L1248.9 4.9L1310.4 3.5L1371.9 4.7Q1390.2 6.4 1390.5 18.5L1389.3 80.6L1388.5 142.8L1391.0 204.9L1390.5 267.0L1388.1 329.1L1391.2 391.2L1388.3 453.3L1391.1 515.4L1388.3 577.5L1388.1 639.6L1386.9 701.7L1388.7 763.8Q1389.7 778.0 1373.8 778.0L1312.2 779.4L1250.6 779.7L1189.0 778.1L1127.3 778.2L1065.7 780.2L1004.1 776.7L942.5 778.5L880.9 777.7L819.3 779.9L757.7 779.9L696.1 781.0L634.5 779.6L572.9 780.0L511.3 779.4L449.7 779.7L388.1 777.7L326.5 777.5L264.9 780.8L203.3 779.9L141.7 781.0L80.1 778.9L18.5 779.7Q8.4 776.5 3.9 762.7L5.2 701.0L3.2 639.3L2.0 577.6L5.3 515.9L3.5 454.2L2.8 392.5L4.1 330.8L3.2 269.1L4.1 207.4L4.3 145.7L4.2 84.0L4.6 22.3Q6.4 4.9 18.1 7.0M4.0 17.9Q8.3 3.5 18.0 6.1L79.6 7.6L141.2 5.0L202.8 8.0L264.4 4.3L326.0 8.5L387.7 7.6L449.3 8.7L510.9 7.0L572.5 5.3L634.1 8.8L695.7 6.6L757.3 5.1L818.9 7.4L880.5 7.0L942.1 7.0L1003.7 5.6L1065.3 5.5L1126.9 7.6L1188.5 7.1L1250.1 5.8L1311.7 7.2L1373.3 7.5Q1389.1 7.1 1388.0 21.0L1388.3 82.8L1388.9 144.5L1389.2 206.2L1390.0 268.0L1390.3 329.7L1389.4 391.4L1391.1 453.2L1388.6 514.9L1388.9 576.6L1389.5 638.4L1392.3 700.1L1390.4 761.8Q1387.3 777.7 1371.6 776.2L1310.1 778.1L1248.7 774.3L1187.2 775.4L1125.7 776.6L1064.3 775.8L1002.8 778.1L941.4 778.1L879.9 776.9L818.4 776.0L757.0 776.5L695.5 779.5L634.0 776.9L572.6 775.7L511.1 776.5L449.7 775.8L388.2 775.7L326.7 779.1L265.3 778.9L203.8 777.9L142.4 776.1L80.9 778.8L19.4 778.4Q8.2 779.8 7.2 763.3L7.0 701.1L7.2 639.0L8.4 576.9L7.4 514.8L5.0 452.7L7.1 390.6L4.0 328.5L4.5 266.4L6.8 204.3L6.0 142.1L3.4 80.0L4.0 17.9Q5.0 6.6 18.0 6.1" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/></svg>
+  </section>
+  <div class="deco ticker"><b>LIVE</b><span>삼성코엑스점 iPT존<i>|</i>15:00 타임 · 금 머슬핏 A<i>|</i>크루 18명 참여 중</span></div>
+  <div class="deco bolt b1"></div><div class="deco bolt b2"></div><div class="deco bolt b3"></div><div class="deco bolt b4"></div>
+</div>
+
+<nav class="ctrl" id="ctrl"></nav>
+
+<script>
+(function(){
+  var SKINS=[['neon-arcade','네온 아케이드'],['iron-gym','아이언 짐'],['live-broadcast','라이브 중계'],['power-energy','파워 에너지'],['wod-chalkboard','WOD 칠판']];
+  var STATES=[['countdown','시작 카운트다운'],['exercise','운동'],['rest','휴식'],['complete','완료']];
+  var A='assets/';
+  var DATA={
+    countdown:{stepLbl:'READY',stepN:'0',stepT:'3',name:'곧 시작합니다',sub:'금 · 머슬핏 A',timerLbl:'시작까지',timer:'00:10',ntag:'FIRST',nimg:'ex-shoulder-press-thumb.jpg',nname:'덤벨 숄더 프레스',nmeta:'12회 × 3세트',video:'ex-shoulder-press.jpg',set:'0',setT:'3',rep:'12',prog:0,gLbl:'READY',gauge:100},
+    exercise:{stepLbl:'STEP',stepN:'1',stepT:'3',name:'덤벨 숄더 프레스',sub:'A 그룹 · 어깨',timerLbl:'남은 시간',timer:'00:37',ntag:'NEXT',nimg:'ex-alt-press-thumb.jpg',nname:'얼터네이트 숄더 프레스',nmeta:'휴식 후 · 좌우 10회',video:'ex-shoulder-press.jpg',set:'1',setT:'3',rep:'12',prog:18,gLbl:'TIME LEFT',gauge:82},
+    rest:{stepLbl:'REST',stepN:'1',stepT:'3',name:'휴식',sub:'숨 고르기 · 물 마시기',timerLbl:'휴식 남은 시간',timer:'00:42',ntag:'NEXT',nimg:'ex-alt-press-thumb.jpg',nname:'얼터네이트 숄더 프레스',nmeta:'좌우 10회 × 3세트',video:'rest.jpg',set:'1',setT:'3',rep:'12',prog:24,gLbl:'RECOVER',gauge:70},
+    complete:{stepLbl:'STEP',stepN:'3',stepT:'3',name:'오늘 루틴 완료',sub:'금 · 머슬핏 A',timerLbl:'총 운동 시간',timer:'30:00',ntag:'다음 수업',nimg:'ex-shoulder-press-thumb.jpg',nname:'16:00 머슬핏 B',nmeta:'30분 뒤 시작',video:'ex-shoulder-press.jpg',set:'3',setT:'3',rep:'12',prog:100,gLbl:'DONE',gauge:100}
+  };
+  var $=function(id){return document.getElementById(id)};
+  var stage=$('stage'), q=new URLSearchParams(location.search);
+  var skin=q.get('skin')||'neon-arcade', state=q.get('state')||'exercise';
+  if(q.get('ui')==='0')document.body.classList.add('hide-ui');
+  function timerHTML(t){ // digits wrapped so a skin can draw scoreboard cells
+    return t.split('').map(function(ch){return ch===':'?'<span class="c">:</span>':'<span class="d">'+ch+'</span>'}).join('');}
+  function fit(el,max,min){el.style.fontSize=max+'px';var s=max;while(el.scrollWidth>el.parentNode.clientWidth-56&&s>min){s-=2;el.style.fontSize=s+'px';}}
+  function render(){
+    stage.setAttribute('data-skin',skin);stage.setAttribute('data-state',state);
+    var d=DATA[state];
+    $('stepLbl').textContent=d.stepLbl;$('stepN').textContent=d.stepN;$('stepT').textContent=d.stepT;
+    $('name').textContent=d.name;$('sub').textContent=d.sub;$('timerLbl').textContent=d.timerLbl;$('timer').innerHTML=timerHTML(d.timer);
+    $('ntag').textContent=d.ntag;$('nimg').src=A+d.nimg;$('nname').textContent=d.nname;$('nmeta').textContent=d.nmeta;
+    $('video').src=A+d.video;$('prog').style.width=d.prog+'%';
+    $('setV').innerHTML=d.set+'<small>/'+d.setT+'</small>';$('repV').innerHTML=d.rep+'<small>회</small>';
+    $('gLbl').textContent=d.gLbl;$('gauge').style.height=d.gauge+'%';$('gPct').textContent=d.gauge+'%';
+    var big=skin==='wod-chalkboard'?84:76; fit($('name'),big,52);
+    var ts=skin==='wod-chalkboard'?136:120; var te=$('timer'); te.style.fontSize=ts+'px'; while(te.scrollWidth>298&&ts>72){ts-=2;te.style.fontSize=ts+'px';}
+    var c='';SKINS.forEach(function(s,i){c+='<button data-skin="'+s[0]+'" class="'+(s[0]===skin?'on':'')+'">'+s[1]+'<kbd>'+(i+1)+'</kbd></button>'});
+    c+='<span class="sep"></span>';STATES.forEach(function(s,i){c+='<button data-state="'+s[0]+'" class="'+(s[0]===state?'on':'')+'">'+s[1]+'<kbd>'+'QWER'[i]+'</kbd></button>'});
+    $('ctrl').innerHTML=c;
+    if(history.replaceState)history.replaceState(null,'','?skin='+skin+'&state='+state+(q.get('ui')==='0'?'&ui=0':''));
+  }
+  function scale(){var s=Math.min(innerWidth/1920,innerHeight/1080);stage.style.transform='translate('+((innerWidth-1920*s)/2)+'px,'+((innerHeight-1080*s)/2)+'px) scale('+s+')';}
+  $('ctrl').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;if(b.dataset.skin)skin=b.dataset.skin;if(b.dataset.state)state=b.dataset.state;render();});
+  addEventListener('keydown',function(e){
+    var k=e.key, si=SKINS.map(function(s){return s[0]}).indexOf(skin), ti=STATES.map(function(s){return s[0]}).indexOf(state);
+    if(k>='1'&&k<='5')skin=SKINS[k-1][0];
+    else if('qwer'.indexOf(k.toLowerCase())>=0&&k.length===1)state=STATES['qwer'.indexOf(k.toLowerCase())][0];
+    else if(k==='ArrowRight')skin=SKINS[(si+1)%5][0]; else if(k==='ArrowLeft')skin=SKINS[(si+4)%5][0];
+    else if(k==='ArrowDown')state=STATES[(ti+1)%4][0]; else if(k==='ArrowUp')state=STATES[(ti+3)%4][0];
+    else if(k==='h'||k==='H'){document.body.classList.toggle('hide-ui');return;} else return;
+    render();});
+  addEventListener('resize',scale);
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(render);
+  render();scale();
+})();
+</script>
+</body>
+</html>

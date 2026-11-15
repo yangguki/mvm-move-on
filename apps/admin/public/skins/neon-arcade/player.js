@@ -1,31 +1,22 @@
-/* ES2017 neon-arcade player — postMessage + expand + double-buffer loop */
+/* ES2017 MOVE ON Player — ADM-SKIN-09 compliant */
 (function () {
   "use strict";
 
   var DEMO = {
     id: "demo",
     name: "네온 데모",
-    status: "draft",
-    draftUpdatedAt: new Date().toISOString(),
-    publishedVersion: null,
     skin: {
       id: "neon-arcade",
-      options: {
-        pointColor: "#C8F31D",
-        restImageUrl: "rest_image.jpg",
-        nextLeadSec: 10,
-      },
-      music: { id: "demo-m", name: "BGM", url: "audio/bgm_gym_loop.mp3", durationSec: 1 },
+      options: { restImageUrl: "rest_image.jpg", nextLeadSec: 10 },
+      music: { url: "audio/bgm_gym_loop.mp3" },
       voicePack: {
-        id: "demo-vp",
-        name: "기본",
         cues: {
-          countdown5: { id: "c5", name: "5", url: "audio/count_5.mp3", durationSec: 1 },
-          countdown4: { id: "c4", name: "4", url: "audio/count_4.mp3", durationSec: 1 },
-          countdown3: { id: "c3", name: "3", url: "audio/count_3.mp3", durationSec: 1 },
-          countdown2: { id: "c2", name: "2", url: "audio/count_2.mp3", durationSec: 1 },
-          countdown1: { id: "c1", name: "1", url: "audio/count_1.mp3", durationSec: 1 },
-          restStart: { id: "rs", name: "휴식 시작", url: "audio/rest_10.mp3", durationSec: 1 },
+          countdown5: { url: "audio/count_5.mp3" },
+          countdown4: { url: "audio/count_4.mp3" },
+          countdown3: { url: "audio/count_3.mp3" },
+          countdown2: { url: "audio/count_2.mp3" },
+          countdown1: { url: "audio/count_1.mp3" },
+          restStart: { url: "audio/rest_10.mp3" },
         },
       },
     },
@@ -35,76 +26,37 @@
         type: "group",
         repeat: 3,
         steps: [
-          {
-            id: "s1",
-            type: "exercise",
-            durationSec: 20,
-            label: "덤벨 숄더 프레스",
-            videoId: "v1",
-          },
-          {
-            id: "s2",
-            type: "exercise",
-            durationSec: 20,
-            label: "얼터네이트 숄더 프레스",
-            videoId: "v2",
-          },
+          { id: "s1", type: "exercise", durationSec: 20, label: "덤벨 숄더 프레스", videoId: "v1" },
+          { id: "s2", type: "exercise", durationSec: 20, label: "얼터네이트 숄더 프레스", videoId: "v2" },
           { id: "s3", type: "rest", durationSec: 10, label: "휴식" },
         ],
       },
     ],
     videos: {
-      v1: {
-        id: "v1",
-        name: "덤벨 숄더 프레스",
-        url: "mvn_shoulder_press.mp4",
-        durationSec: 3,
-        thumbnailUrl: "rest_image.jpg",
-        width: 1920,
-        height: 1080,
-      },
-      v2: {
-        id: "v2",
-        name: "얼터네이트 숄더 프레스",
-        url: "mvn_shoulder_press.mp4",
-        durationSec: 4,
-        thumbnailUrl: "rest_image.jpg",
-        width: 1920,
-        height: 1080,
-      },
+      v1: { id: "v1", name: "덤벨 숄더 프레스", url: "mvn_shoulder_press.mp4", durationSec: 3, thumbnailUrl: "rest_image.jpg" },
+      v2: { id: "v2", name: "얼터네이트 숄더 프레스", url: "mvn_shoulder_press.mp4", durationSec: 4, thumbnailUrl: "rest_image.jpg" },
     },
   };
 
-  function $(id) {
-    return document.getElementById(id);
-  }
-  function pad(n) {
-    return (n < 10 ? "0" : "") + n;
-  }
-  function clock(sec) {
-    var s = Math.max(0, Math.ceil(sec));
-    return pad(Math.floor(s / 60)) + ":" + pad(s % 60);
-  }
-  function safePlay(v) {
-    var p = v.play();
-    if (p && p.catch) p.catch(function () {});
-  }
+  function $(id) { return document.getElementById(id); }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function safePlay(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
 
   var stage = $("stage");
-  var nextEl = $("next");
-  var main = $("fA");
-  var standby = $("fB");
+  var video = $("fA");
+  var restImg = $("rest");
   var scale = 1;
-  var OX = 0;
-  var OY = 0;
   var playItems = [];
   var idx = 0;
   var start = 0;
   var nextLeadSec = 10;
-  var nextShown = false;
   var loopActive = null;
+  var loopMode = true;
+  var isPaused = false;
+  var videosById = {};
+  var spokenKey = "";
   var options = DEMO.skin.options;
-  var musicUrl = (DEMO.skin.music && DEMO.skin.music.url) || "audio/bgm_gym_loop.mp3";
+  var musicUrl = (DEMO.skin.music && DEMO.skin.music.url) || "";
   var cueUrls = {
     countdown5: "audio/count_5.mp3",
     countdown4: "audio/count_4.mp3",
@@ -112,246 +64,78 @@
     countdown2: "audio/count_2.mp3",
     countdown1: "audio/count_1.mp3",
     restStart: "audio/rest_10.mp3",
-    rest10: null,
-    rest30: null,
-    rest60: null,
   };
-
-  function pickRestCue(durationSec) {
-    if (durationSec <= 20 && cueUrls.rest10) return "rest10";
-    if (durationSec <= 45 && cueUrls.rest30) return "rest30";
-    if (cueUrls.rest60) return "rest60";
-    if (durationSec <= 20 && cueUrls.rest10) return "rest10";
-    if (durationSec <= 45 && cueUrls.rest30) return "rest30";
-    return "restStart";
-  }
-  var spokenKey = "";
-  var videosById = {};
-  var loopMode = true;
-  var isPaused = false;
 
   function fit() {
     scale = Math.min(innerWidth / 1920, innerHeight / 1080);
-    OX = (innerWidth - 1920 * scale) / 2;
-    OY = (innerHeight - 1080 * scale) / 2;
-    stage.style.transform = "translate(-50%,-50%) scale(" + scale + ")";
-    document.documentElement.style.setProperty("--s", String(scale));
-    place(main, geoMain());
-    place(standby, nextShown ? geoPv() : geoMain());
-    placeRest();
+    var ox = (innerWidth - 1920 * scale) / 2;
+    var oy = (innerHeight - 1080 * scale) / 2;
+    stage.style.transform = "translate(" + ox + "px," + oy + "px) scale(" + scale + ")";
   }
 
-  function R(id) {
-    var s = stage.getBoundingClientRect();
-    var r = $(id).getBoundingClientRect();
-    var dx = id === "slotPv" && !nextEl.classList.contains("show") ? 40 * scale : 0;
-    return { l: (r.left - s.left - dx) / scale, t: (r.top - s.top) / scale, w: r.width / scale, h: r.height / scale };
-  }
-  function place(f, r) {
-    f.style.left = OX + r.l * scale + "px";
-    f.style.top = OY + r.t * scale + "px";
-    f.style.width = r.w * scale + "px";
-    f.style.height = r.h * scale + "px";
-  }
-  function placeS(f, r) {
-    f.style.left = r.l + "px";
-    f.style.top = r.t + "px";
-    f.style.width = r.w + "px";
-    f.style.height = r.h + "px";
-  }
-  function geoMain() {
-    return nextShown ? sideGeo() : R("slotMain");
-  }
-  function geoPv() {
-    return R("slotPv");
-  }
-  function sideGeo() {
-    var F = R("slotMain");
-    var W = R("vw");
-    var k = (W.w - 540 - 32) / F.w;
-    return { l: W.l, t: F.t + (F.h - F.h * k) / 2, w: F.w * k, h: F.h * k };
-  }
-  function placeRest() {
-    var W = R("vw");
-    var tg = R("ntag");
-    placeS($("rest"), { l: W.l + W.w - 540, t: W.t + 8, w: 540, h: Math.max(120, tg.t - W.t - 24) });
-  }
-  function vid(f) {
-    return f.querySelector("video");
-  }
-
-  function applyThemeTokens(tokens) {
-    if (!tokens) return;
-    var root = document.documentElement.style;
-    var stage = $("stage");
-    var body = document.body;
-
-    if (tokens.primary) {
-      root.setProperty("--theme-primary", tokens.primary);
-      root.setProperty("--neon", tokens.primary);
-    }
-    if (tokens.secondary) {
-      root.setProperty("--theme-secondary", tokens.secondary);
-      root.setProperty("--pink", tokens.secondary);
-    }
-    if (tokens.accent) {
-      root.setProperty("--theme-accent", tokens.accent);
-      root.setProperty("--lime", tokens.accent);
-    }
-    if (tokens.background) {
-      root.setProperty("--theme-bg", tokens.background);
-      root.setProperty("--bg", tokens.background);
-    }
-    if (tokens.surface) root.setProperty("--theme-surface", tokens.surface);
-    if (tokens.text) root.setProperty("--theme-text", tokens.text);
-    if (tokens.textMuted) {
-      root.setProperty("--theme-muted", tokens.textMuted);
-    }
-    if (tokens.fontFamily) {
-      root.setProperty("--theme-font", tokens.fontFamily);
-      body.style.fontFamily = tokens.fontFamily;
-    }
-    if (typeof tokens.borderRadius === "number") root.setProperty("--theme-radius", tokens.borderRadius + "px");
-    if (typeof tokens.videoRadius === "number") root.setProperty("--theme-video-radius", tokens.videoRadius + "px");
-
-    if (tokens.barGradient) root.setProperty("--bar-gradient", tokens.barGradient);
-    if (tokens.frameGlow) root.setProperty("--frame-glow", tokens.frameGlow);
-    if (tokens.frameBorder) root.setProperty("--frame-border", tokens.frameBorder);
-    if (tokens.nameGlow) root.setProperty("--name-glow", tokens.nameGlow);
-    if (tokens.bgPattern) root.setProperty("--bg-pattern", tokens.bgPattern);
-    if (tokens.warningStripe) root.setProperty("--warning-stripe", tokens.warningStripe);
-
-    var theme = tokens.theme || "neon-arcade";
-    stage.setAttribute("data-theme", theme);
-    body.setAttribute("data-theme", theme);
-
-    if (tokens.scanlines === false) stage.classList.add("no-scanlines");
-    else stage.classList.remove("no-scanlines");
-
-    if (tokens.liveIndicator) stage.classList.add("has-live");
-    else stage.classList.remove("has-live");
-
-    if (tokens.scoreboard) stage.classList.add("has-scoreboard");
-    else stage.classList.remove("has-scoreboard");
-
-    if (tokens.energyGauge) stage.classList.add("has-energy");
-    else stage.classList.remove("has-energy");
-
-    if (tokens.chalkTexture) stage.classList.add("has-chalk");
-    else stage.classList.remove("has-chalk");
-
-    if (tokens.metalTexture) stage.classList.add("has-metal");
-    else stage.classList.remove("has-metal");
-
-    if (tokens.countdownLabel) window._skinLabels = window._skinLabels || {};
-    if (tokens.countdownLabel) window._skinLabels.rest = tokens.countdownLabel;
-    if (tokens.completeLabel) window._skinLabels.complete = tokens.completeLabel;
-  }
-
-  function applySkin(skin) {
-    options = (skin && skin.options) || options;
-    nextLeadSec = typeof options.nextLeadSec === "number" ? options.nextLeadSec : 10;
-    if (options.pointColor) {
-      document.documentElement.style.setProperty("--lime", options.pointColor);
-      document.documentElement.style.setProperty("--neon", options.pointColor);
-    }
-    if (skin && skin.tokens) {
-      applyThemeTokens(skin.tokens);
-    }
-    var stills = document.querySelectorAll(".still");
-    var restUrl = options.restImageUrl || "rest_image.jpg";
-    for (var i = 0; i < stills.length; i++) stills[i].setAttribute("src", restUrl);
-    if (options.logoUrl) {
-      var logo = $("logo");
-      if (logo) {
-        logo.src = options.logoUrl;
-        logo.style.display = "block";
-      }
-    }
-    if (skin && skin.music && skin.music.url) musicUrl = skin.music.url;
-    else if (options.musicUrl) musicUrl = options.musicUrl;
-    if (skin && skin.voicePack && skin.voicePack.cues) {
-      var cues = skin.voicePack.cues;
-      var keys = ["countdown5", "countdown4", "countdown3", "countdown2", "countdown1", "restStart", "rest10", "rest30", "rest60"];
-      for (var k = 0; k < keys.length; k++) {
-        var key = keys[k];
-        if (cues[key] && cues[key].url) cueUrls[key] = cues[key].url;
-      }
-    }
-    if (A.el && A.el.bgm && musicUrl) {
-      A.el.bgm.src = musicUrl;
-      if (A.on) A.el.bgm.play().catch(function () {});
+  function setTimerDigits(sec) {
+    var s = Math.max(0, Math.ceil(sec));
+    var mm = pad(Math.floor(s / 60));
+    var ss = pad(s % 60);
+    var timerEl = $("timer");
+    var spans = timerEl.querySelectorAll(".d");
+    if (spans.length === 4) {
+      if (spans[0].textContent !== mm[0]) spans[0].textContent = mm[0];
+      if (spans[1].textContent !== mm[1]) spans[1].textContent = mm[1];
+      if (spans[2].textContent !== ss[0]) spans[2].textContent = ss[0];
+      if (spans[3].textContent !== ss[1]) spans[3].textContent = ss[1];
+    } else {
+      timerEl.innerHTML = '<span class="d">' + mm[0] + '</span><span class="d">' + mm[1] +
+        '</span><span class="c">:</span><span class="d">' + ss[0] + '</span><span class="d">' + ss[1] + '</span>';
     }
   }
 
-  function stopLoop() {
-    if (loopActive) {
-      clearInterval(loopActive.timer);
-      var va = vid(main);
-      var vb = vid(standby);
-      va.ontimeupdate = null;
-      vb.ontimeupdate = null;
-      loopActive = null;
-    }
+  function setBar(pct) {
+    var bar = $("bar");
+    bar.style.width = (pct * 100) + "%";
   }
 
-  /** 더블버퍼: 같은 src를 두 video에 두고 끝나기 직전 교대 */
-  function startDoubleBuffer(src) {
-    stopLoop();
-    var a = vid(main);
-    var b = vid(standby);
-    a.loop = false;
-    b.loop = false;
-    a.src = src;
-    b.src = src;
-    a.load();
-    b.load();
-    var active = a;
-    var other = b;
-    function swapSoon() {
-      if (!loopActive || nextShown) return;
-      try {
-        other.currentTime = 0;
-      } catch (e) {}
-      safePlay(other);
-      var tmp = active;
-      active = other;
-      other = tmp;
-      // 같은 메인 자리에서 교차: standby를 main 자리로 잠시 맞춤
-      if (!nextShown) {
-        standby.classList.remove("pv");
-        standby.classList.add("main", "show");
-        place(standby, geoMain());
-        main.classList.remove("main");
-        main.classList.add("pv");
-        var oldMain = main;
-        main = standby;
-        standby = oldMain;
-        a = vid(main);
-        b = vid(standby);
-        active = a;
-        other = b;
-        place(standby, geoMain());
-        standby.style.opacity = "0";
-      }
-    }
-    function onUpdate() {
-      if (!loopActive || nextShown) return;
-      var v = active;
-      if (v.duration && isFinite(v.duration) && v.currentTime >= v.duration - 0.18) {
-        swapSoon();
-      }
-    }
-    a.ontimeupdate = onUpdate;
-    safePlay(a);
-    loopActive = { timer: setInterval(onUpdate, 80) };
+  function setGauge(pct) {
+    var g = $("gauge");
+    if (g) g.style.height = (pct * 100) + "%";
+    var pctEl = $("gPct");
+    if (pctEl) pctEl.textContent = Math.round(pct * 100) + "%";
+  }
+
+  function setState(state) {
+    stage.setAttribute("data-state", state);
   }
 
   function setHud(item) {
-    $("stepNo").textContent = "STEP " + (item.index + 1) + " / " + playItems.length;
-    $("meta").textContent = item.type === "guide" ? "GUIDE" : item.type === "rest" ? "REST" : "WORK";
-    $("name").textContent = item.label;
-    $("tl").textContent = item.type === "rest" ? "REST" : "REMAINING";
+    $("stepN").textContent = item.index + 1;
+    $("stepT").textContent = playItems.length;
+    $("name").textContent = item.label || "";
+    var subText = item.type === "rest" ? "" : item.type === "guide" ? "" : item.group || "";
+    var subEl = $("sub");
+    subEl.textContent = subText;
+    subEl.style.display = subText ? "" : "none";
+    $("timerLbl").textContent = item.type === "rest" ? "휴식 시간" : "남은 시간";
+    var hasSet = typeof item.setNum === "number" && typeof item.setTotal === "number";
+    var hasRep = typeof item.reps === "number" && item.reps > 0;
+    var setBox = $("setBox");
+    var repBox = $("repBox");
+    var gutSep = $("gutSep");
+    var gutL = $("gutL");
+    if (hasSet) {
+      $("setV").innerHTML = item.setNum + "<small>/" + item.setTotal + "</small>";
+      if (setBox) setBox.style.display = "";
+    } else {
+      if (setBox) setBox.style.display = "none";
+    }
+    if (hasRep) {
+      $("repV").innerHTML = item.reps + "<small>회</small>";
+      if (repBox) repBox.style.display = "";
+    } else {
+      if (repBox) repBox.style.display = "none";
+    }
+    if (gutSep) gutSep.style.display = (hasSet && hasRep) ? "" : "none";
+    if (gutL) gutL.style.display = (hasSet || hasRep) ? "" : "none";
+    $("gLbl").textContent = "남은 시간";
   }
 
   function setNextPanel(item) {
@@ -360,38 +144,100 @@
       $("nmeta").textContent = "";
       return;
     }
-    $("nname").textContent = item.next.label;
-    $("nmeta").textContent = item.next.afterRest ? "REST THEN NEXT" : "NEXT MOVE";
-    var url = item.next.video && item.next.video.url;
-    if (url) {
-      var v = vid(standby);
-      if (v.getAttribute("src") !== url) {
-        v.src = url;
-        v.load();
+    $("nname").textContent = item.next.label || "";
+    var meta = item.next.afterRest ? "휴식 후" : "다음 동작";
+    if (typeof item.next.reps === "number" && item.next.reps > 0) {
+      meta += " · " + item.next.reps + "회";
+    }
+    $("nmeta").textContent = meta;
+    var url = item.next.video && item.next.video.thumbnailUrl;
+    if (url) $("nimg").src = url;
+  }
+
+  function setCountdownOverlay(item, sec) {
+    $("cdNum").textContent = sec;
+    $("cdText").innerHTML = "<em>" + sec + "초</em> 뒤, " + playItems.length + "가지 운동 루틴이<br>시작됩니다";
+    var chips = $("cdChips");
+    var uniqueExercises = [];
+    var seen = {};
+    for (var i = 0; i < playItems.length; i++) {
+      var it = playItems[i];
+      if (it.type === "exercise" && !seen[it.label]) {
+        seen[it.label] = true;
+        uniqueExercises.push(it.label);
       }
+    }
+    chips.innerHTML = uniqueExercises.slice(0, 3).map(function (name, j) {
+      return '<span class="chip"><em>' + (j + 1) + '</em>' + name + '</span>';
+    }).join("");
+  }
+
+  function setRestOverlay(item, sec) {
+    $("rsLabel").textContent = item.durationSec + "초";
+    $("rsNum").textContent = sec;
+    var next = item.next;
+    var nxBox = $("rsNxBox");
+    if (next && next.label) {
+      var meta = next.label;
+      if (typeof next.reps === "number" && next.reps > 0) {
+        meta += " · " + next.reps + "회";
+      }
+      $("rsNext").textContent = meta;
+      if (nxBox) nxBox.style.display = "";
+    } else {
+      $("rsNext").textContent = "";
+      if (nxBox) nxBox.style.display = "none";
     }
   }
 
-  function showNext(on) {
-    if (on === nextShown) return;
-    nextShown = on;
-    nextEl.classList.toggle("show", on);
-    standby.classList.toggle("show", on);
-    if (on) {
-      standby.classList.remove("main");
-      standby.classList.add("pv", "show");
-      place(standby, geoPv());
-      place(main, sideGeo());
-      main.classList.add("main");
-      var v = vid(main);
-      v.loop = true;
-      safePlay(vid(standby));
-    } else {
-      standby.classList.remove("show");
-      place(main, R("slotMain"));
-      var mv = vid(main);
-      mv.loop = false;
+  var programName = "";
+  function setTicker(item) {
+    var tickerText = $("tickerText");
+    if (!tickerText) return;
+    var parts = [];
+    if (programName) parts.push(programName);
+    if (item && item.label) parts.push("현재: " + item.label);
+    if (item && item.next && item.next.label) parts.push("다음: " + item.next.label);
+    tickerText.innerHTML = parts.join('<i>|</i>');
+  }
+
+  function setCompleteOverlay() {
+    var totalSec = 0;
+    var exCount = 0;
+    var uniqueEx = {};
+    for (var i = 0; i < playItems.length; i++) {
+      totalSec += playItems[i].durationSec || 0;
+      if (playItems[i].type === "exercise") {
+        exCount++;
+        uniqueEx[playItems[i].label] = true;
+      }
     }
+    var uniqueCount = Object.keys(uniqueEx).length;
+    var mm = Math.floor(totalSec / 60);
+    var ss = totalSec % 60;
+    var stats = $("cpStats");
+    stats.innerHTML = '<div class="stat"><span class="n1">' + uniqueCount + '</span><span>가지 운동</span></div>' +
+      '<div class="stat"><span class="n1">' + exCount + '</span><span>세트</span></div>' +
+      '<div class="stat"><span class="n1">' + mm + ":" + pad(ss) + '</span><span>운동 시간</span></div>';
+    var cpMsg = $("cpMsg");
+    if (cpMsg) cpMsg.textContent = "오늘도 해냈어요. " + mm + "분 동안 수고 많으셨어요";
+  }
+
+  function stopLoop() {
+    if (loopActive) {
+      clearInterval(loopActive.timer);
+      video.ontimeupdate = null;
+      loopActive = null;
+    }
+  }
+
+  function startVideoLoop(src) {
+    stopLoop();
+    video.loop = true;
+    video.src = src;
+    video.load();
+    safePlay(video);
+    loopActive = { timer: 0 };
   }
 
   function beginItem(i, now) {
@@ -401,43 +247,31 @@
     spokenKey = "";
     var item = playItems[idx];
     if (!item) return;
+
     setHud(item);
     setNextPanel(item);
-    showNext(false);
-    stage.classList.toggle("resting", item.type === "rest" || item.type === "guide");
-    $("rest").classList.toggle("show", item.type === "rest");
-    main.classList.toggle("stillOn", item.type === "rest" || item.type === "guide");
+    setTicker(item);
 
-    if (item.type === "exercise" && item.video && item.video.url) {
-      main.classList.remove("stillOn");
-      startDoubleBuffer(item.video.url);
-    } else {
-      vid(main).pause();
-      if (item.next && item.next.video && item.next.video.url) {
-        var pv = vid(standby);
-        pv.src = item.next.video.url;
-        pv.load();
-        showNext(true);
-        safePlay(pv);
+    if (item.type === "countdown") {
+      setState("countdown");
+      video.pause();
+      restImg.style.display = "block";
+      setCountdownOverlay(item, item.durationSec);
+    } else if (item.type === "rest") {
+      setState("rest");
+      video.pause();
+      restImg.style.display = "block";
+      setRestOverlay(item, item.durationSec);
+      playCue("restStart");
+    } else if (item.type === "exercise") {
+      setState("exercise");
+      restImg.style.display = "none";
+      if (item.video && item.video.url) {
+        startVideoLoop(item.video.url);
       }
-    }
-    if (item.type === "rest") playCue(pickRestCue(item.durationSec));
-    startBar(item.durationSec * 1000);
-  }
-
-  var barAnim = null;
-  function startBar(totalMs) {
-    var b = $("bar");
-    if (barAnim) {
-      barAnim.cancel();
-      barAnim = null;
-    }
-    if (b.animate) {
-      barAnim = b.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], {
-        duration: totalMs,
-        easing: "linear",
-        fill: "forwards",
-      });
+    } else {
+      setState("exercise");
+      restImg.style.display = "none";
     }
   }
 
@@ -447,19 +281,24 @@
     var totalMs = item.durationSec * 1000;
     var el = now - start;
     var left = Math.max(0, Math.ceil((totalMs - el) / 1000));
-    $("t").textContent = clock(left);
-    if (item.type === "rest") $("rcnt").textContent = String(left);
+    var pct = Math.min(1, el / totalMs);
 
-    if ((item.type === "exercise" || item.type === "rest") && left >= 1 && left <= 5) {
+    setTimerDigits(left);
+    setBar(pct);
+    setGauge(1 - pct);
+
+    if (item.type === "countdown") {
+      $("cdNum").textContent = left;
+    } else if (item.type === "rest") {
+      $("rsNum").textContent = left;
+    }
+
+    if ((item.type === "exercise" || item.type === "rest" || item.type === "countdown") && left >= 1 && left <= 5) {
       var key = idx + ":c" + left;
       if (spokenKey !== key) {
         spokenKey = key;
         playCue("countdown" + left);
       }
-    }
-
-    if (item.type === "exercise" && item.next) {
-      showNext(totalMs - el <= nextLeadSec * 1000);
     }
 
     if (el >= totalMs) {
@@ -468,10 +307,10 @@
         if (loopMode) {
           next = 0;
         } else {
+          setState("complete");
+          setCompleteOverlay();
           stopLoop();
-          try {
-            (window.parent || window).postMessage({ type: "mvn:done" }, "*");
-          } catch (e) {}
+          try { (window.parent || window).postMessage({ type: "mvn:done" }, "*"); } catch (e) {}
           return;
         }
       }
@@ -501,7 +340,6 @@
       }
     }
     merge(program.videos);
-    merge(program._videos);
     function walk(items) {
       for (var j = 0; j < items.length; j++) {
         var it = items[j];
@@ -510,24 +348,79 @@
       }
     }
     walk(program.items || []);
-    return Object.keys(videosById).map(function (k) {
-      return videosById[k];
-    });
+    return Object.keys(videosById).map(function (k) { return videosById[k]; });
+  }
+
+  function applySkin(skin) {
+    options = (skin && skin.options) || options;
+    nextLeadSec = typeof options.nextLeadSec === "number" ? options.nextLeadSec : 10;
+    var stills = document.querySelectorAll(".still");
+    var restUrl = options.restImageUrl || "rest_image.jpg";
+    for (var i = 0; i < stills.length; i++) stills[i].setAttribute("src", restUrl);
+    if (skin && skin.music && skin.music.url) musicUrl = skin.music.url;
+    if (skin && skin.voicePack && skin.voicePack.cues) {
+      var cues = skin.voicePack.cues;
+      var keys = ["countdown5", "countdown4", "countdown3", "countdown2", "countdown1", "restStart"];
+      for (var k = 0; k < keys.length; k++) {
+        var key = keys[k];
+        if (cues[key] && cues[key].url) cueUrls[key] = cues[key].url;
+      }
+    }
+    if (skin && skin.id) {
+      stage.setAttribute("data-skin", skin.id);
+    }
+    if (A.el && A.el.bgm && musicUrl) {
+      A.el.bgm.src = musicUrl;
+      if (A.on) A.el.bgm.play().catch(function () {});
+    }
   }
 
   function loadProgram(program) {
     if (!program) return;
     var payload = program.playItems
       ? program
-      : { program: program, playItems: window.mvnExpand(program, collectVideos(program)) };
+      : { program: program, playItems: window.mvnExpand ? window.mvnExpand(program, collectVideos(program)) : [] };
     var prog = payload.program || program;
-    var items = payload.playItems || window.mvnExpand(prog, collectVideos(prog));
+    var items = payload.playItems || [];
+    if (!items.length && prog.items) {
+      items = [];
+      var exIdx = 0;
+      function walk(list, setN, setT) {
+        for (var i = 0; i < list.length; i++) {
+          var it = list[i];
+          if (it.type === "group") {
+            var rep = it.repeat || 1;
+            for (var r = 0; r < rep; r++) {
+              walk(it.steps || [], r + 1, rep);
+            }
+          } else {
+            items.push({
+              index: items.length,
+              id: it.id,
+              type: it.type,
+              label: it.label,
+              durationSec: it.durationSec || 20,
+              video: videosById[it.videoId],
+              setNum: setN,
+              setTotal: setT,
+              reps: it.reps || 12,
+              group: it.group || "",
+            });
+          }
+        }
+      }
+      collectVideos(prog);
+      walk(prog.items, 1, 1);
+      for (var n = 0; n < items.length; n++) {
+        items[n].next = items[n + 1] || null;
+      }
+    }
     if (prog.skin) applySkin(prog.skin);
+    programName = prog.name || "";
     playItems = items;
-    beginItem(0, performance.now());
+    if (playItems.length) beginItem(0, performance.now());
   }
 
-  // audio: 첫 사용자 입력 후 시작. 실패해도 영상은 계속.
   var A = { on: false, el: {} };
   function playCue(name) {
     if (!A.on) return;
@@ -552,9 +445,7 @@
     } catch (e) {}
   }
   $("snd").addEventListener("click", enableAudio);
-  addEventListener("pointerdown", function () {
-    if (!A.on) enableAudio();
-  }, { once: true });
+  addEventListener("pointerdown", function () { if (!A.on) enableAudio(); }, { once: true });
   addEventListener("keydown", function (e) {
     if (!A.on && (e.key === "Enter" || e.keyCode === 13)) {
       e.preventDefault();
@@ -573,24 +464,20 @@
     }
     if (data.type === "mvn:pause") {
       isPaused = true;
-      vid(main).pause();
-      vid(standby).pause();
+      video.pause();
       if (A.el.bgm) A.el.bgm.pause();
       return;
     }
     if (data.type === "mvn:resume") {
       isPaused = false;
       var item = playItems[idx];
-      if (item && item.type === "exercise") safePlay(vid(main));
+      if (item && item.type === "exercise") safePlay(video);
       if (A.el.bgm) A.el.bgm.play().catch(function () {});
       return;
     }
   });
 
   fit();
-  place(main, R("slotMain"));
-  place(standby, R("slotPv"));
-  placeRest();
   loadProgram(DEMO);
   $("snd").focus();
   loop();
