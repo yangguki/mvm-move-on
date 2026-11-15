@@ -90,15 +90,36 @@ model Device {
   @@map("devices")
 }
 
+enum VideoStatus {
+  uploading
+  processing
+  ready
+  failed
+
+  @@map("video_status")
+}
+
+enum VideoSourceType {
+  url
+  upload
+
+  @@map("video_source_type")
+}
+
 model Video {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name         String
   url          String
-  durationSec  Int      @map("duration_sec")
-  thumbnailUrl String   @map("thumbnail_url")
+  durationSec  Int             @map("duration_sec")
+  thumbnailUrl String          @map("thumbnail_url")
   width        Int
   height       Int
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  status       VideoStatus     @default(ready)
+  sourceType   VideoSourceType @default(url) @map("source_type")
+  error        String?
+  sizeBytes    Int?            @map("size_bytes")
+  storageKey   String?         @map("storage_key")
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@map("videos")
 }

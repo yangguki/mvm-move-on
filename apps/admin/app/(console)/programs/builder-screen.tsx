@@ -39,7 +39,7 @@ type Step = {
   groupRepeat: number | null;
 };
 type Program = SharedProgram & { totals?: { seconds: number; stepCount: number } };
-type VideoItem = { id: string; name: string; url: string; durationSec: number; thumbnailUrl: string; width: number; height: number };
+type VideoItem = { id: string; name: string; url: string; durationSec: number; thumbnailUrl: string; width: number; height: number; status?: string };
 type AudioItem = { id: string; name: string; kind: string; url: string; durationSec: number; mimeType: string };
 type VoicePackItem = { id: string; name: string; isDefault: boolean };
 type VersionItem = { id: string; version: number; name: string; publishedAt: string; stepCount: number };
@@ -1047,7 +1047,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                           }}
                         >
                           <option value="">영상 선택</option>
-                          {videos.map((video) => (
+                          {videos.filter((v) => !v.status || v.status === "ready").map((video) => (
                             <option key={video.id} value={video.id}>
                               {video.name}
                             </option>
