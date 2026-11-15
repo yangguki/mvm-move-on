@@ -8,3 +8,4 @@ packages/db/src/generated
 *.log
 coverage
 .DS_Store
+*.tsbuildinfo

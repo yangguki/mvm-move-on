@@ -2,7 +2,6 @@
   "name": "@mvn/shared",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "main": "./dist/index.js",
   "types": "./src/index.ts",
   "exports": {
@@ -14,9 +13,11 @@
     }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "node --import tsx/esm --test test/expand.test.mjs"
   },
   "devDependencies": {
-    "tsx": "^4.19.0"
+    "tsx": "^4.19.0",
+    "typescript": "^5.3.3"
   }
 }
