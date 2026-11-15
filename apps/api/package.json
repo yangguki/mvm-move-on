@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "predev": "pnpm --filter @mvn/shared build",
     "dev": "nest start --watch",
-    "build": "nest build",
+    "build": "pnpm --filter @mvn/shared build && nest build",
     "start": "node dist/main.js",
     "test": "node --import tsx/esm --test test/*.test.mjs"
   },

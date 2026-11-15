@@ -9,7 +9,11 @@
     "dev:player": "pnpm --filter @mvn/player dev",
     "db:generate": "pnpm --filter @mvn/db generate",
     "db:migrate": "pnpm --filter @mvn/db migrate",
+    "db:push": "pnpm --filter @mvn/db push",
     "db:seed": "node packages/db/prisma/seed.js",
+    "infra:up": "docker compose up -d && sleep 2 && aws --endpoint-url=http://localhost:4566 s3 mb s3://mvn-media 2>/dev/null || true",
+    "infra:down": "docker compose down",
+    "e2e": "node scripts/e2e-smoke.mjs",
     "postinstall": "pnpm db:generate"
   },
   "pnpm": {

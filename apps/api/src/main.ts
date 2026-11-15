@@ -1,10 +1,18 @@
 import { config } from "dotenv";
+import { existsSync } from "fs";
 import { resolve } from "path";
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 
-config({ path: resolve(process.cwd(), "../../.env") });
+const rootEnv = resolve(process.cwd(), "../../.env");
+const localEnv = resolve(__dirname, "../.env.development");
+
+if (existsSync(rootEnv)) {
+  config({ path: rootEnv });
+} else if (process.env.NODE_ENV !== "production" && existsSync(localEnv)) {
+  config({ path: localEnv });
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
