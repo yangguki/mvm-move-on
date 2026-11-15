@@ -38,7 +38,7 @@ type Step = {
   groupLabel: string | null;
   groupRepeat: number | null;
 };
-type Program = SharedProgram & { totals?: { seconds: number; stepCount: number } };
+type Program = SharedProgram & { totals?: { seconds: number; stepCount: number }; needsRepublish?: boolean };
 type VideoItem = { id: string; name: string; url: string; durationSec: number; thumbnailUrl: string; width: number; height: number; status?: string };
 type AudioItem = { id: string; name: string; kind: string; url: string; durationSec: number; mimeType: string };
 type VoicePackItem = { id: string; name: string; isDefault: boolean };
@@ -225,6 +225,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const [selected, setSelected] = useState(0);
   const [published, setPublished] = useState<number | null>(null);
   const [status, setStatus] = useState("draft");
+  const [needsRepublish, setNeedsRepublish] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
   const [savedAt, setSavedAt] = useState("");
   const [error, setError] = useState("");
@@ -249,6 +250,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     setSkinOptions(program.skin.options);
     setPublished(program.publishedVersion);
     setStatus(program.status);
+    setNeedsRepublish(program.needsRepublish ?? false);
     setUpdatedAt(program.draftUpdatedAt);
     setSavedAt(new Date(program.draftUpdatedAt).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }));
     const next = fromShared(program);
@@ -307,6 +309,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       });
       setPublished(saved.publishedVersion);
       setStatus(saved.status);
+      setNeedsRepublish(saved.needsRepublish ?? false);
       setUpdatedAt(saved.draftUpdatedAt);
       setSavedAt(new Date(saved.draftUpdatedAt).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }));
       snapshot.current = JSON.stringify({ name: saved.name, skin: saved.skin, steps: fromShared(saved) });
@@ -587,7 +590,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const playhead = total ? (playElapsed / total) * 100 : 0;
   const preview = FRAME_SRC[frame];
   const thumb = current ? thumbFor(current) : null;
-  const dirtyAfterPublish = published != null && status === "draft";
+  const showRepublishBadge = needsRepublish || (published != null && status === "draft");
 
   useEffect(() => {
     if (!skinFrameOk || !previewRef.current?.contentWindow) return;
@@ -691,7 +694,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
           <span className="dot" />
           {status === "published" ? "게시됨" : "초안"}
         </span>
-        {dirtyAfterPublish ? <span className="badge badge-outline">게시 후 수정됨</span> : null}
+        {showRepublishBadge ? <span className="badge badge-outline" style={{ color: "var(--danger, #b91c1c)" }}>재게시 필요</span> : null}
         <span className="saved">
           <CheckCheck className="i i-sm" aria-hidden />
           {savedAt ? `자동 저장됨 · ${savedAt}` : "불러오는 중"}

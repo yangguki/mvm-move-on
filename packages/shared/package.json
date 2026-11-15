@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "node --import tsx/esm --test test/expand.test.mjs"
+    "test": "node --test test/expand.test.mjs"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

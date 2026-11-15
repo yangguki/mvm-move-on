@@ -131,6 +131,7 @@ model AudioAsset {
   url         String
   durationSec Int      @map("duration_sec")
   mimeType    String   @map("mime_type")
+  storageKey  String?  @map("storage_key")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@map("audio_assets")

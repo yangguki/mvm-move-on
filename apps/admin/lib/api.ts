@@ -21,6 +21,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly data?: unknown,
   ) {
     super(message);
   }
@@ -48,6 +49,6 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (response.status === 204) return undefined as T;
   const body = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(messageOf(body, "요청에 실패했어요"), response.status);
+  if (!response.ok) throw new ApiError(messageOf(body, "요청에 실패했어요"), response.status, body);
   return body as T;
 }

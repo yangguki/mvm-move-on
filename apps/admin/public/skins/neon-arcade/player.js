@@ -112,7 +112,19 @@
     countdown2: "audio/count_2.mp3",
     countdown1: "audio/count_1.mp3",
     restStart: "audio/rest_10.mp3",
+    rest10: null,
+    rest30: null,
+    rest60: null,
   };
+
+  function pickRestCue(durationSec) {
+    if (durationSec <= 20 && cueUrls.rest10) return "rest10";
+    if (durationSec <= 45 && cueUrls.rest30) return "rest30";
+    if (cueUrls.rest60) return "rest60";
+    if (durationSec <= 20 && cueUrls.rest10) return "rest10";
+    if (durationSec <= 45 && cueUrls.rest30) return "rest30";
+    return "restStart";
+  }
   var spokenKey = "";
   var videosById = {};
   var loopMode = true;
@@ -189,7 +201,7 @@
     else if (options.musicUrl) musicUrl = options.musicUrl;
     if (skin && skin.voicePack && skin.voicePack.cues) {
       var cues = skin.voicePack.cues;
-      var keys = ["countdown5", "countdown4", "countdown3", "countdown2", "countdown1", "restStart"];
+      var keys = ["countdown5", "countdown4", "countdown3", "countdown2", "countdown1", "restStart", "rest10", "rest30", "rest60"];
       for (var k = 0; k < keys.length; k++) {
         var key = keys[k];
         if (cues[key] && cues[key].url) cueUrls[key] = cues[key].url;
@@ -338,7 +350,7 @@
         safePlay(pv);
       }
     }
-    if (item.type === "rest") playCue("restStart");
+    if (item.type === "rest") playCue(pickRestCue(item.durationSec));
     startBar(item.durationSec * 1000);
   }
 

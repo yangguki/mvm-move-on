@@ -9,6 +9,17 @@ export const VOICE_CUE_KEYS: VoiceCueKey[] = [
   "restStart",
 ];
 
+export const REST_CUE_KEYS: VoiceCueKey[] = ["rest10", "rest30", "rest60"];
+
+export const ALL_CUE_KEYS: VoiceCueKey[] = [...VOICE_CUE_KEYS, ...REST_CUE_KEYS];
+
+/** 휴식 시간에 맞는 rest cue 선택 (10/30/60초 중 가장 가까운 것) */
+export function pickRestCue(durationSec: number): VoiceCueKey {
+  if (durationSec <= 20) return "rest10";
+  if (durationSec <= 45) return "rest30";
+  return "rest60";
+}
+
 export type AudioLookup = {
   musicById: Map<string, ResolvedAudioRef>;
   defaultMusic?: ResolvedAudioRef;

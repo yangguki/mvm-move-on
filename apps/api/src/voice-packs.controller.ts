@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -10,20 +11,26 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import { VOICE_CUE_KEYS, type VoiceCueKey } from "@mvn/shared";
+import { VOICE_CUE_KEYS, REST_CUE_KEYS, type VoiceCueKey } from "@mvn/shared";
 import { AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
 
-type CuesMap = Record<VoiceCueKey, string>;
+type CuesMap = Partial<Record<VoiceCueKey, string>>;
 
 function parseCues(raw: unknown): CuesMap {
   if (!raw || typeof raw !== "object") throw new BadRequestException("cues가 필요해요");
   const src = raw as Record<string, unknown>;
-  const out = {} as CuesMap;
+  const out: CuesMap = {};
   for (const key of VOICE_CUE_KEYS) {
     const id = src[key];
     if (typeof id !== "string" || !id.trim()) throw new BadRequestException(`cues.${key}가 필요해요`);
     out[key] = id.trim();
+  }
+  for (const key of REST_CUE_KEYS) {
+    const id = src[key];
+    if (typeof id === "string" && id.trim()) {
+      out[key] = id.trim();
+    }
   }
   return out;
 }
@@ -46,7 +53,42 @@ export class VoicePacksController {
   @Get()
   async list() {
     const rows = await this.prisma.voicePack.findMany({ orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] });
-    return { items: rows.map(present) };
+    const usageMap = await this.buildUsageMap();
+    return {
+      items: rows.map((row) => ({
+        ...present(row),
+        usedInPrograms: usageMap.get(row.id) || [],
+      })),
+    };
+  }
+
+  private async buildUsageMap(): Promise<Map<string, string[]>> {
+    const programs = await this.prisma.program.findMany({
+      select: { id: true, name: true, draft: true, publishedVersion: true },
+    });
+    const versions = await this.prisma.programVersion.findMany({
+      where: {
+        programId: { in: programs.filter((p) => p.publishedVersion).map((p) => p.id) },
+        version: { in: programs.filter((p) => p.publishedVersion).map((p) => p.publishedVersion!) },
+      },
+      select: { programId: true, snapshot: true },
+    });
+    const versionByProgram = new Map(versions.map((v) => [v.programId, v.snapshot as { skin?: { options?: { voicePackId?: string } } }]));
+
+    const map = new Map<string, string[]>();
+    for (const program of programs) {
+      const draft = program.draft as { skin?: { options?: { voicePackId?: string } } };
+      const published = versionByProgram.get(program.id);
+      const vpIds = [draft?.skin?.options?.voicePackId, published?.skin?.options?.voicePackId].filter(Boolean) as string[];
+      for (const vpId of vpIds) {
+        const existing = map.get(vpId) || [];
+        if (!existing.includes(program.name)) {
+          existing.push(program.name);
+          map.set(vpId, existing);
+        }
+      }
+    }
+    return map;
   }
 
   @Post()
@@ -89,7 +131,40 @@ export class VoicePacksController {
   async remove(@Param("id") id: string) {
     const current = await this.prisma.voicePack.findUnique({ where: { id } });
     if (!current) throw new NotFoundException("음성 팩을 찾을 수 없어요");
+
+    const usedIn = await this.findVoicePackUsage(id);
+    if (usedIn.length > 0) {
+      throw new ConflictException({
+        message: "사용 중인 음성 팩은 삭제할 수 없어요",
+        programs: usedIn,
+      });
+    }
+
     await this.prisma.voicePack.delete({ where: { id } });
     return { ok: true };
+  }
+
+  private async findVoicePackUsage(voicePackId: string): Promise<string[]> {
+    const programs = await this.prisma.program.findMany({
+      select: { id: true, name: true, draft: true, publishedVersion: true },
+    });
+    const versions = await this.prisma.programVersion.findMany({
+      where: {
+        programId: { in: programs.filter((p) => p.publishedVersion).map((p) => p.id) },
+        version: { in: programs.filter((p) => p.publishedVersion).map((p) => p.publishedVersion!) },
+      },
+      select: { programId: true, snapshot: true },
+    });
+    const versionByProgram = new Map(versions.map((v) => [v.programId, v.snapshot as { skin?: { options?: { voicePackId?: string } } }]));
+
+    const usedIn: string[] = [];
+    for (const program of programs) {
+      const draft = program.draft as { skin?: { options?: { voicePackId?: string } } };
+      const published = versionByProgram.get(program.id);
+      if (draft?.skin?.options?.voicePackId === voicePackId || published?.skin?.options?.voicePackId === voicePackId) {
+        usedIn.push(program.name);
+      }
+    }
+    return usedIn;
   }
 }

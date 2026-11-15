@@ -1,5 +1,6 @@
 import {
   VOICE_CUE_KEYS,
+  REST_CUE_KEYS,
   type AudioLookup,
   type ProgramSkin,
   type ResolvedAudioRef,
@@ -38,11 +39,11 @@ export async function loadAudioLookup(prisma: PrismaService): Promise<AudioLooku
   const voicePackById = new Map<string, ResolvedVoicePack>();
   let defaultVoicePack: ResolvedVoicePack | undefined;
   for (const pack of packs) {
-    const cuesRaw = pack.cues as Record<VoiceCueKey, string>;
+    const cuesRaw = pack.cues as Partial<Record<VoiceCueKey, string>>;
     const cues = {} as ResolvedVoicePack["cues"];
     let ok = true;
     for (const key of VOICE_CUE_KEYS) {
-      const asset = assetById.get(cuesRaw[key]);
+      const asset = assetById.get(cuesRaw[key] ?? "");
       if (!asset) {
         ok = false;
         break;
@@ -50,6 +51,10 @@ export async function loadAudioLookup(prisma: PrismaService): Promise<AudioLooku
       cues[key] = asset;
     }
     if (!ok) continue;
+    for (const key of REST_CUE_KEYS) {
+      const asset = assetById.get(cuesRaw[key] ?? "");
+      if (asset) cues[key] = asset;
+    }
     const resolved: ResolvedVoicePack = { id: pack.id, name: pack.name, cues };
     voicePackById.set(pack.id, resolved);
     if (pack.isDefault) defaultVoicePack = resolved;

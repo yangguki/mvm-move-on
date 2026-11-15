@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { expand, playTotalSec } from "../src/program.ts";
-import { resolveSkinAudio, withResolvedSkinAudio } from "../src/audio.ts";
-import { validateProgram } from "../src/validate.ts";
+import { expand, playTotalSec, validateProgram, resolveSkinAudio, withResolvedSkinAudio } from "../dist/index.js";
 
 describe("expand", () => {
   it("그룹 x3 예시: 총 150초, 9개 항목, NEXT 라벨", () => {

@@ -19,7 +19,7 @@ export type ResolvedAudioRef = {
   mimeType?: string;
 };
 
-export type VoiceCueKey = "countdown5" | "countdown4" | "countdown3" | "countdown2" | "countdown1" | "restStart";
+export type VoiceCueKey = "countdown5" | "countdown4" | "countdown3" | "countdown2" | "countdown1" | "restStart" | "rest10" | "rest30" | "rest60";
 
 export type ResolvedVoicePack = {
   id: string;

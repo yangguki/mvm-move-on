@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Music2, Mic2, Upload } from "lucide-react";
+import { Music2, Mic2, Upload, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 
 type AudioItem = {
@@ -12,6 +12,7 @@ type AudioItem = {
   durationSec: number;
   mimeType: string;
   createdAt: string;
+  usedInPrograms?: string[];
 };
 
 type VoicePack = {
@@ -20,15 +21,19 @@ type VoicePack = {
   isDefault: boolean;
   cues: Record<string, string>;
   createdAt: string;
+  usedInPrograms?: string[];
 };
 
-const CUE_LABELS: Array<{ key: string; label: string }> = [
-  { key: "countdown5", label: "카운트 5" },
-  { key: "countdown4", label: "카운트 4" },
-  { key: "countdown3", label: "카운트 3" },
-  { key: "countdown2", label: "카운트 2" },
-  { key: "countdown1", label: "카운트 1" },
-  { key: "restStart", label: "휴식 시작" },
+const CUE_LABELS: Array<{ key: string; label: string; required: boolean }> = [
+  { key: "countdown5", label: "카운트 5", required: true },
+  { key: "countdown4", label: "카운트 4", required: true },
+  { key: "countdown3", label: "카운트 3", required: true },
+  { key: "countdown2", label: "카운트 2", required: true },
+  { key: "countdown1", label: "카운트 1", required: true },
+  { key: "restStart", label: "휴식 시작", required: true },
+  { key: "rest10", label: "휴식 10초", required: false },
+  { key: "rest30", label: "휴식 30초", required: false },
+  { key: "rest60", label: "휴식 60초", required: false },
 ];
 
 function clock(sec: number) {
@@ -115,7 +120,7 @@ export default function AudioPage() {
     setBusy(true);
     setError("");
     try {
-      const missing = CUE_LABELS.find(({ key }) => !cues[key]);
+      const missing = CUE_LABELS.find(({ key, required }) => required && !cues[key]);
       if (missing) throw new Error(`${missing.label} 음성을 선택해 주세요`);
       await api("/admin/v1/voice-packs", {
         method: "POST",
@@ -124,6 +129,44 @@ export default function AudioPage() {
       await reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "음성 팩 저장에 실패했어요");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteAudio(id: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/admin/v1/audio/${id}`, { method: "DELETE" });
+      await reload();
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        const data = caught.data as { programs?: string[] };
+        const names = data?.programs?.join(", ") || "다른 프로그램";
+        setError(`이 오디오는 ${names}에서 사용 중이에요`);
+      } else {
+        setError(caught instanceof Error ? caught.message : "삭제에 실패했어요");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deletePack(id: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/admin/v1/voice-packs/${id}`, { method: "DELETE" });
+      await reload();
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        const data = caught.data as { programs?: string[] };
+        const names = data?.programs?.join(", ") || "다른 프로그램";
+        setError(`이 음성 팩은 ${names}에서 사용 중이에요`);
+      } else {
+        setError(caught instanceof Error ? caught.message : "삭제에 실패했어요");
+      }
     } finally {
       setBusy(false);
     }
@@ -182,7 +225,7 @@ export default function AudioPage() {
                 key={item.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr auto",
+                  gridTemplateColumns: "1fr auto auto",
                   gap: 12,
                   alignItems: "center",
                   padding: "12px 14px",
@@ -194,9 +237,20 @@ export default function AudioPage() {
                   <strong style={{ display: "block" }}>{item.name}</strong>
                   <small style={{ color: "var(--muted, #6b7280)" }}>
                     {clock(item.durationSec)} · {item.mimeType}
+                    {item.usedInPrograms?.length ? ` · 사용 중: ${item.usedInPrograms.join(", ")}` : ""}
                   </small>
                 </div>
-                <audio controls preload="none" src={item.url} style={{ height: 32, maxWidth: 280 }} />
+                <audio controls preload="none" src={item.url} style={{ height: 32, maxWidth: 240 }} />
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="삭제"
+                  disabled={busy}
+                  onClick={() => void deleteAudio(item.id)}
+                  style={{ color: "var(--muted, #6b7280)" }}
+                >
+                  <Trash2 className="i i-sm" aria-hidden />
+                </button>
               </li>
             ))}
             {!list.length ? <li style={{ color: "var(--muted, #6b7280)" }}>등록된 배경음악이 없어요.</li> : null}
@@ -231,7 +285,7 @@ export default function AudioPage() {
                   key={item.id}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr auto",
+                    gridTemplateColumns: "1fr auto auto",
                     gap: 12,
                     alignItems: "center",
                     padding: "10px 12px",
@@ -241,9 +295,22 @@ export default function AudioPage() {
                 >
                   <div>
                     <strong>{item.name}</strong>
-                    <small style={{ display: "block", color: "var(--muted, #6b7280)" }}>{clock(item.durationSec)}</small>
+                    <small style={{ display: "block", color: "var(--muted, #6b7280)" }}>
+                      {clock(item.durationSec)}
+                      {item.usedInPrograms?.length ? ` · 사용 중: ${item.usedInPrograms.join(", ")}` : ""}
+                    </small>
                   </div>
-                  <audio controls preload="none" src={item.url} style={{ height: 32, maxWidth: 240 }} />
+                  <audio controls preload="none" src={item.url} style={{ height: 32, maxWidth: 200 }} />
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="삭제"
+                    disabled={busy}
+                    onClick={() => void deleteAudio(item.id)}
+                    style={{ color: "var(--muted, #6b7280)" }}
+                  >
+                    <Trash2 className="i i-sm" aria-hidden />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -276,9 +343,36 @@ export default function AudioPage() {
             <h2 style={{ fontSize: 15, margin: "0 0 8px" }}>등록된 음성 팩</h2>
             <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
               {packs.map((pack) => (
-                <li key={pack.id} style={{ padding: "10px 12px", border: "1px solid var(--border, #e5e7eb)", borderRadius: 8 }}>
-                  <strong>{pack.name}</strong>
-                  {pack.isDefault ? <small style={{ marginLeft: 8 }}>기본</small> : null}
+                <li
+                  key={pack.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 12px",
+                    border: "1px solid var(--border, #e5e7eb)",
+                    borderRadius: 8,
+                  }}
+                >
+                  <div>
+                    <strong>{pack.name}</strong>
+                    {pack.isDefault ? <small style={{ marginLeft: 8 }}>기본</small> : null}
+                    {pack.usedInPrograms?.length ? (
+                      <small style={{ display: "block", color: "var(--muted, #6b7280)" }}>
+                        사용 중: {pack.usedInPrograms.join(", ")}
+                      </small>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="삭제"
+                    disabled={busy}
+                    onClick={() => void deletePack(pack.id)}
+                    style={{ color: "var(--muted, #6b7280)" }}
+                  >
+                    <Trash2 className="i i-sm" aria-hidden />
+                  </button>
                 </li>
               ))}
             </ul>

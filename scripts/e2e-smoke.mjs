@@ -11,6 +11,7 @@ const API = "http://localhost:3001";
 
 let token = "";
 let videoId = "";
+let audioId = "";
 let programId = "";
 let storeId = "";
 let pairingCode = "";
@@ -97,8 +98,36 @@ function step2_uploadVideo() {
   fail("2", "영상 처리 타임아웃");
 }
 
+function step2b_uploadAudio() {
+  log("2b", "오디오 업로드...");
+  
+  // 1초 무음 MP3 생성
+  try {
+    execSync("ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=mono -t 1 -c:a libmp3lame /tmp/test-audio.mp3 2>/dev/null");
+  } catch {
+    log("2b", "WARNING: 테스트 오디오 생성 실패, 스킵");
+    return;
+  }
+  
+  const audioData = readFileSync("/tmp/test-audio.mp3").toString("base64");
+  const res = curlWithAuth("POST", "/admin/v1/audio", {
+    name: "E2E 테스트 음악",
+    kind: "music",
+    durationSec: 1,
+    mimeType: "audio/mpeg",
+    dataBase64: audioData,
+  });
+  
+  if (!res.id) fail("2b", `업로드 실패: ${JSON.stringify(res)}`);
+  audioId = res.id;
+  log("2b", `오디오 업로드 완료: ${audioId}, url=${res.url}`);
+}
+
 function step3_createProgram() {
   log("3", "프로그램 생성...");
+  const skinOptions = { pointColor: "#C8F31D", nextLeadSec: 3 };
+  if (audioId) skinOptions.musicId = audioId;
+  
   const res = curlWithAuth("POST", "/admin/v1/programs", {
     name: "E2E 테스트 프로그램",
     draft: {
@@ -107,12 +136,37 @@ function step3_createProgram() {
         { id: "rest-1", type: "rest", durationSec: 5, label: "휴식" },
         { id: "ex-2", type: "exercise", durationSec: 10, label: "운동 2", videoId },
       ],
-      skin: { id: "neon-arcade", options: { pointColor: "#C8F31D", nextLeadSec: 3 } },
+      skin: { id: "neon-arcade", options: skinOptions },
     },
   });
   if (!res.id) fail("3", `생성 실패: ${JSON.stringify(res)}`);
   programId = res.id;
   log("3", `프로그램 생성: ${programId}`);
+}
+
+function step3b_audioDeleteProtection() {
+  if (!audioId) {
+    log("3b", "오디오 없음, 삭제 보호 테스트 스킵");
+    return;
+  }
+  log("3b", "오디오 삭제 보호 테스트...");
+  
+  try {
+    const result = execSync(
+      `curl -s -w "\\n%{http_code}" -X DELETE -H "Authorization: Bearer ${token}" "${API}/admin/v1/audio/${audioId}"`,
+      { encoding: "utf-8" }
+    );
+    const lines = result.trim().split("\n");
+    const status = lines.pop();
+    
+    if (status === "409") {
+      log("3b", `삭제 보호 OK: 409 응답`);
+    } else {
+      fail("3b", `삭제가 허용됨 (status=${status})`);
+    }
+  } catch (err) {
+    fail("3b", `요청 실패: ${err.message}`);
+  }
 }
 
 function step4_publishProgram() {
@@ -198,7 +252,9 @@ function main() {
   try {
     step1_login();
     step2_uploadVideo();
+    step2b_uploadAudio();
     step3_createProgram();
+    step3b_audioDeleteProtection();
     step4_publishProgram();
     step5_createPairing();
     step6_playerPair();

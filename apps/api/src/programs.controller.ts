@@ -80,14 +80,15 @@ function asDraft(raw: unknown): { items: SharedProgram["items"]; skin: SharedPro
   }
 }
 
-function present(row: {
-  id: string;
-  name: string;
-  status: string;
-  draft: unknown;
-  draftUpdatedAt: Date;
-  publishedVersion: number | null;
-}): SharedProgram & { totals: { seconds: number; stepCount: number } } {
+type PresentedProgram = SharedProgram & {
+  totals: { seconds: number; stepCount: number };
+  needsRepublish: boolean;
+};
+
+function present(
+  row: { id: string; name: string; status: string; draft: unknown; draftUpdatedAt: Date; publishedVersion: number | null },
+  publishedSnapshot?: { items: unknown; skin: unknown } | null,
+): PresentedProgram {
   const draft = row.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
   const program: SharedProgram = {
     id: row.id,
@@ -99,10 +100,16 @@ function present(row: {
     items: draft.items,
   };
   const play = expand(program);
+  const needsRepublish = row.publishedVersion != null && publishedSnapshot != null && !deepEqual(draft, publishedSnapshot);
   return {
     ...program,
     totals: { seconds: playTotalSec(play), stepCount: play.length },
+    needsRepublish,
   };
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 @Controller("admin/v1/programs")
@@ -113,7 +120,21 @@ export class ProgramsController {
   @Get()
   async list() {
     const rows = await this.prisma.program.findMany({ orderBy: { updatedAt: "desc" } });
-    return { items: rows.map(present) };
+    const publishedIds = rows.filter((r) => r.publishedVersion != null).map((r) => r.id);
+    const versions = await this.prisma.programVersion.findMany({
+      where: {
+        programId: { in: publishedIds },
+        version: { in: rows.filter((r) => r.publishedVersion).map((r) => r.publishedVersion!) },
+      },
+      select: { programId: true, version: true, snapshot: true },
+    });
+    const snapshotMap = new Map(
+      versions.map((v) => {
+        const snap = v.snapshot as { items: unknown; skin: { options: unknown } };
+        return [v.programId, { items: snap.items, skin: snap.skin }];
+      }),
+    );
+    return { items: rows.map((r) => present(r, snapshotMap.get(r.id))) };
   }
 
   @Post()
@@ -132,12 +153,14 @@ export class ProgramsController {
     const row = await this.prisma.program.create({
       data: { name, status: "draft", draft, draftUpdatedAt: new Date() },
     });
-    return present(row);
+    return present(row, null);
   }
 
   @Get(":id")
   async detail(@Param("id") id: string) {
-    return present(await this.load(id));
+    const row = await this.load(id);
+    const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
+    return present(row, published);
   }
 
   @Put(":id")
@@ -160,7 +183,8 @@ export class ProgramsController {
         draftUpdatedAt: new Date(),
       },
     });
-    return present(row);
+    const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
+    return present(row, published);
   }
 
   @Post(":id/publish")
@@ -196,7 +220,9 @@ export class ProgramsController {
         },
       });
     });
-    return present(await this.load(id));
+    const row = await this.load(id);
+    const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
+    return present(row, published);
   }
 
   @Get(":id/versions")
@@ -225,5 +251,16 @@ export class ProgramsController {
     const program = await this.prisma.program.findUnique({ where: { id } });
     if (!program) throw new NotFoundException("프로그램을 찾을 수 없어요");
     return program;
+  }
+
+  private async getPublishedSnapshot(programId: string, publishedVersion: number | null) {
+    if (publishedVersion == null) return null;
+    const version = await this.prisma.programVersion.findFirst({
+      where: { programId, version: publishedVersion },
+      select: { snapshot: true },
+    });
+    if (!version) return null;
+    const snap = version.snapshot as { items: unknown; skin: unknown };
+    return { items: snap.items, skin: snap.skin };
   }
 }
