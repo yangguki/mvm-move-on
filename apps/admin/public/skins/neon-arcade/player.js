@@ -115,6 +115,8 @@
   };
   var spokenKey = "";
   var videosById = {};
+  var loopMode = true;
+  var isPaused = false;
 
   function fit() {
     scale = Math.min(innerWidth / 1920, innerHeight / 1080);
@@ -357,7 +359,7 @@
   }
 
   function tick(now) {
-    if (!playItems.length) return;
+    if (!playItems.length || isPaused) return;
     var item = playItems[idx];
     var totalMs = item.durationSec * 1000;
     var el = now - start;
@@ -379,7 +381,17 @@
 
     if (el >= totalMs) {
       var next = idx + 1;
-      if (next >= playItems.length) next = 0;
+      if (next >= playItems.length) {
+        if (loopMode) {
+          next = 0;
+        } else {
+          stopLoop();
+          try {
+            (window.parent || window).postMessage({ type: "mvn:done" }, "*");
+          } catch (e) {}
+          return;
+        }
+      }
       beginItem(next, start + totalMs);
     }
   }
@@ -470,8 +482,26 @@
   addEventListener("resize", fit);
   addEventListener("message", function (ev) {
     var data = ev.data;
-    if (!data || data.type !== "mvn:program") return;
-    loadProgram(data.program);
+    if (!data) return;
+    if (data.type === "mvn:program") {
+      loopMode = data.loop !== false;
+      loadProgram(data.program);
+      return;
+    }
+    if (data.type === "mvn:pause") {
+      isPaused = true;
+      vid(main).pause();
+      vid(standby).pause();
+      if (A.el.bgm) A.el.bgm.pause();
+      return;
+    }
+    if (data.type === "mvn:resume") {
+      isPaused = false;
+      var item = playItems[idx];
+      if (item && item.type === "exercise") safePlay(vid(main));
+      if (A.el.bgm) A.el.bgm.play().catch(function () {});
+      return;
+    }
   });
 
   fit();

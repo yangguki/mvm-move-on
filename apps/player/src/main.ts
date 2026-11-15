@@ -208,7 +208,7 @@ function launchSkin(program: ProgramDetail) {
   wrap.appendChild(skinIframe);
 
   skinIframe.onload = () => {
-    skinIframe?.contentWindow?.postMessage({ type: "mvn:program", program }, "*");
+    skinIframe?.contentWindow?.postMessage({ type: "mvn:program", program, loop: false }, "*");
   };
 
   window.addEventListener("message", onSkinMessage);

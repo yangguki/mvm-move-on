@@ -23,8 +23,8 @@ export class PlayerController {
   @Post("pair")
   async pair(@Body() body: { code?: string }) {
     const code = body.code?.trim();
-    if (!code || code.length !== 6) {
-      throw new BadRequestException("6자리 페어링 코드가 필요해요");
+    if (!code || !/^\d{6}$/.test(code)) {
+      throw new BadRequestException("6자리 숫자 페어링 코드가 필요해요");
     }
     const session = await this.prisma.pairingSession.findUnique({ where: { code } });
     if (!session || session.expiresAt < new Date() || session.consumedAt) {
