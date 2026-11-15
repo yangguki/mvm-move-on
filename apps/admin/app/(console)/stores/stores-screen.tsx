@@ -36,6 +36,9 @@ export function StoresScreen() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [pairingCode, setPairingCode] = useState("");
+  const [pairingStatus, setPairingStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [pairingMsg, setPairingMsg] = useState("");
 
   async function load() {
     const data = await api<{ summary: { storeCount: number; tvCount: number }; items: Store[] }>("/admin/v1/stores");
@@ -135,6 +138,31 @@ export function StoresScreen() {
     }
   }
 
+  async function approvePairing(event: FormEvent) {
+    event.preventDefault();
+    if (!/^\d{6}$/.test(pairingCode)) {
+      setPairingStatus("error");
+      setPairingMsg("6자리 숫자 코드가 필요해요");
+      return;
+    }
+    setPairingStatus("loading");
+    setPairingMsg("");
+    try {
+      const res = await api<{ ok: boolean; device: { code: string; name: string } }>("/admin/v1/approve-pairing", {
+        method: "POST",
+        body: JSON.stringify({ code: pairingCode }),
+      });
+      setPairingStatus("success");
+      setPairingMsg(`TV 승인 완료: ${res.device.code}`);
+      setPairingCode("");
+      await load();
+      setTimeout(() => { setPairingStatus("idle"); setPairingMsg(""); }, 3000);
+    } catch (caught) {
+      setPairingStatus("error");
+      setPairingMsg(caught instanceof ApiError ? caught.message : "승인 실패");
+    }
+  }
+
   const attention = items.filter((store) => store.offline > 0).length;
 
   return (
@@ -152,6 +180,25 @@ export function StoresScreen() {
         </button>
       </div>
       {error ? <p className="form-error">{error}</p> : null}
+      <form className="card pair-box" onSubmit={(event) => void approvePairing(event)} style={{ marginBottom: 16 }}>
+        <span style={{ fontWeight: 600, marginRight: 8 }}>TV 승인</span>
+        <input
+          className="input"
+          style={{ width: 120 }}
+          placeholder="6자리 코드"
+          value={pairingCode}
+          onChange={(e) => setPairingCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          maxLength={6}
+        />
+        <button type="submit" className="btn btn-primary btn-sm" disabled={pairingStatus === "loading"}>
+          {pairingStatus === "loading" ? "승인 중..." : "승인"}
+        </button>
+        {pairingMsg && (
+          <span style={{ marginLeft: 12, color: pairingStatus === "success" ? "var(--volt-700)" : "var(--err-700)" }}>
+            {pairingMsg}
+          </span>
+        )}
+      </form>
       {open ? (
         <form className="card pair-box" onSubmit={(event) => void create(event)}>
           <input className="input" style={{ width: 220 }} placeholder="지점 이름" value={name} onChange={(event) => setName(event.target.value)} required />

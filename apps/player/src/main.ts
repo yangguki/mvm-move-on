@@ -62,71 +62,57 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+var pairingPollTimer: number | null = null;
+
 function initPairing() {
-  const container = $("code-inputs");
-  const inputs: HTMLInputElement[] = [];
-  for (let i = 0; i < 6; i++) {
-    const input = document.createElement("input");
-    input.type = "text";
-    input.maxLength = 1;
-    input.pattern = "[0-9]";
-    input.inputMode = "numeric";
-    input.dataset.index = String(i);
-    inputs.push(input);
-    container.appendChild(input);
-  }
-  const pairBtn = $<HTMLButtonElement>("pair-btn");
-  const errorEl = $("pair-error");
+  var codeDisplay = $("code-display");
+  var statusEl = $("pair-status");
+  var errorEl = $("pair-error");
+  var currentCode = "";
 
-  function getCode() {
-    return inputs.map((i) => i.value).join("");
-  }
-
-  function updateBtn() {
-    pairBtn.disabled = getCode().length !== 6;
-  }
-
-  inputs.forEach((input, idx) => {
-    input.addEventListener("input", () => {
-      const val = input.value.replace(/\D/g, "");
-      input.value = val.slice(0, 1);
-      if (val && idx < 5) inputs[idx + 1].focus();
-      updateBtn();
-    });
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Backspace" && !input.value && idx > 0) {
-        inputs[idx - 1].focus();
-      }
-      if (e.key === "ArrowLeft" && idx > 0) inputs[idx - 1].focus();
-      if (e.key === "ArrowRight" && idx < 5) inputs[idx + 1].focus();
-      if (e.key === "Enter") {
-        e.preventDefault();
-        if (getCode().length === 6) void doPair();
-      }
-    });
-  });
-
-  async function doPair() {
+  async function requestCode() {
     errorEl.textContent = "";
-    showLoading(true);
+    statusEl.textContent = "코드 발급 중...";
+    codeDisplay.textContent = "------";
     try {
-      const { token } = await api<{ token: string }>("/player/v1/pair", {
-        method: "POST",
-        body: JSON.stringify({ code: getCode() }),
-      });
-      deviceToken = token;
-      localStorage.setItem(TOKEN_KEY, token);
-      await loadPrograms();
-      showScreen("list");
+      var res = await api<{ code: string; expiresAt: string }>("/player/v1/code", { method: "POST" });
+      currentCode = res.code;
+      codeDisplay.textContent = res.code;
+      statusEl.textContent = "관리자 화면에서 이 코드를 입력하세요";
+      startPolling();
     } catch (err) {
-      errorEl.textContent = err instanceof Error ? err.message : "페어링 실패";
-    } finally {
-      showLoading(false);
+      errorEl.textContent = err instanceof Error ? err.message : "코드 발급 실패";
+      statusEl.textContent = "5초 후 재시도...";
+      setTimeout(function() { requestCode(); }, 5000);
     }
   }
 
-  pairBtn.addEventListener("click", () => void doPair());
-  inputs[0].focus();
+  function startPolling() {
+    if (pairingPollTimer) clearInterval(pairingPollTimer);
+    pairingPollTimer = window.setInterval(function() { checkStatus(); }, 3000);
+  }
+
+  async function checkStatus() {
+    if (!currentCode) return;
+    try {
+      var res = await api<{ status: string; token?: string }>("/player/v1/code/" + currentCode + "/status");
+      if (res.status === "approved" && res.token) {
+        if (pairingPollTimer) clearInterval(pairingPollTimer);
+        deviceToken = res.token;
+        localStorage.setItem(TOKEN_KEY, res.token);
+        statusEl.textContent = "승인 완료!";
+        await loadPrograms();
+        showScreen("list");
+      } else if (res.status === "expired") {
+        statusEl.textContent = "코드 만료, 재발급 중...";
+        requestCode();
+      }
+    } catch (err) {
+      // polling error, continue
+    }
+  }
+
+  requestCode();
 }
 
 async function loadPrograms() {

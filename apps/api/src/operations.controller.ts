@@ -159,4 +159,40 @@ export class OperationsController {
     }
     throw new ConflictException("연결 코드를 만들지 못했어요. 다시 시도해 주세요");
   }
+
+  @Post("approve-pairing")
+  async approvePairing(@Req() request: { user: AccessToken }, @Body() body: { code?: string }) {
+    assertHq(request.user);
+    const code = body.code?.trim();
+    if (!code || !/^\d{6}$/.test(code)) {
+      throw new BadRequestException("6자리 숫자 코드가 필요해요");
+    }
+    const session = await this.prisma.pairingSession.findUnique({ where: { code } });
+    if (!session) throw new NotFoundException("코드를 찾을 수 없어요");
+    if (session.expiresAt < new Date()) throw new BadRequestException("만료된 코드예요");
+    if (session.approvedAt) throw new BadRequestException("이미 승인된 코드예요");
+    const defaultSkin = await this.prisma.skin.findFirst({ where: { isBuiltin: true }, orderBy: { createdAt: "asc" } });
+    if (!defaultSkin) throw new BadRequestException("기본 스킨이 없어요");
+    const defaultStore = await this.prisma.store.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" } });
+    if (!defaultStore) throw new BadRequestException("활성 지점이 없어요");
+    const deviceCode = `TV-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const device = await this.prisma.device.create({
+      data: {
+        code: deviceCode,
+        name: `TV ${deviceCode}`,
+        storeId: defaultStore.id,
+        skinId: defaultSkin.id,
+        status: "ok",
+        statusLabel: "연결 완료",
+        appVersion: "1.0.0",
+        seenLabel: "방금 전",
+        offline: false,
+      },
+    });
+    await this.prisma.pairingSession.update({
+      where: { id: session.id },
+      data: { approvedAt: new Date(), deviceId: device.id, storeId: defaultStore.id },
+    });
+    return { ok: true, device: { id: device.id, code: device.code, name: device.name } };
+  }
 }
