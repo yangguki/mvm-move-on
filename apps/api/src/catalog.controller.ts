@@ -124,21 +124,4 @@ export class CatalogController {
     };
   }
 
-  @Get("skins")
-  async skins() {
-    const rows = await this.prisma.skin.findMany({
-      include: { devices: { select: { storeId: true } } },
-      orderBy: { name: "asc" },
-    });
-    return {
-      items: rows.map((skin) => ({
-        id: skin.id,
-        slug: skin.slug,
-        name: skin.name,
-        tone: skin.tone,
-        isBuiltin: skin.isBuiltin,
-        storeCount: new Set(skin.devices.map((device) => device.storeId)).size,
-      })),
-    };
-  }
 }

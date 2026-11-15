@@ -248,8 +248,8 @@ export function SkinsView() {
                   ) : null}
                   <b>{skin.name}</b>
                   <small>
-                    {skin.storeCount > 0 ? `${skin.storeCount}개 기기` : "기기 없음"}
-                    {skin.usedInPrograms.length > 0 ? ` · ${skin.usedInPrograms.length}개 프로그램` : ""}
+                    {(skin.storeCount ?? 0) > 0 ? `${skin.storeCount}개 기기` : "기기 없음"}
+                    {(skin.usedInPrograms?.length ?? 0) > 0 ? ` · ${skin.usedInPrograms.length}개 프로그램` : ""}
                     {!skin.isActive ? " · 비활성" : ""}
                   </small>
                 </button>
