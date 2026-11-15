@@ -177,12 +177,19 @@ function step4_publishProgram() {
 }
 
 function step5_createPairing() {
-  log("5", "지점 확인 및 페어링 코드 발급...");
+  log("5", "지점에 프로그램 지정 및 페어링 코드 발급...");
   
-  const stores = curlWithAuth("GET", "/admin/v1/stores");
-  if (!stores.items?.length) fail("5", "지점 없음");
-  storeId = stores.items[0].id;
-  log("5", `지점: ${stores.items[0].name} (${storeId})`);
+  // 테스트용 새 지점 생성 (기존 지점의 Device 레코드 충돌 방지)
+  const code = `E2EP${Date.now() % 10000}`;
+  const created = curlWithAuth("POST", "/admin/v1/stores", { name: "E2E 페어링 테스트 지점", code });
+  if (!created.id) fail("5", `지점 생성 실패: ${JSON.stringify(created)}`);
+  storeId = created.id;
+  log("5", `테스트 지점 생성: ${created.name} (${storeId})`);
+  
+  // 지점에 E2E 프로그램 지정
+  const updated = curlWithAuth("PATCH", `/admin/v1/stores/${storeId}`, { programId });
+  if (updated.programId !== programId) fail("5", `프로그램 지정 실패: ${JSON.stringify(updated)}`);
+  log("5", `지점에 프로그램 지정 OK: ${updated.program?.name ?? programId}`);
   
   const session = curlWithAuth("POST", "/admin/v1/pairing-sessions", { storeId });
   if (!session.code) fail("5", `페어링 실패: ${JSON.stringify(session)}`);
@@ -190,22 +197,126 @@ function step5_createPairing() {
   log("5", `페어링 코드: ${pairingCode}`);
 }
 
+function step5b_storeUpdateAndDeleteProtection() {
+  log("5b", "지점 수정 및 삭제 보호 테스트...");
+  
+  // 1. 테스트용 지점 생성
+  const code = `E2E${Date.now() % 10000}`;
+  const created = curlWithAuth("POST", "/admin/v1/stores", { name: "E2E 테스트 지점", code });
+  if (!created.id) fail("5b", `지점 생성 실패: ${JSON.stringify(created)}`);
+  const testStoreId = created.id;
+  log("5b", `테스트 지점 생성: ${testStoreId}`);
+  
+  // 2. 지점 이름 수정
+  const updated = curlWithAuth("PATCH", `/admin/v1/stores/${testStoreId}`, { name: "E2E 수정된 지점" });
+  if (updated.name !== "E2E 수정된 지점") fail("5b", `수정 실패: ${JSON.stringify(updated)}`);
+  log("5b", `지점 이름 수정 OK: ${updated.name}`);
+  
+  // 3. 지점 비활성화
+  const deactivated = curlWithAuth("PATCH", `/admin/v1/stores/${testStoreId}`, { isActive: false });
+  if (deactivated.isActive !== false) fail("5b", `비활성화 실패: ${JSON.stringify(deactivated)}`);
+  log("5b", `지점 비활성화 OK: isActive=${deactivated.isActive}`);
+  
+  // 4. TV 없는 지점 삭제 (성공해야 함)
+  try {
+    const result = execSync(
+      `curl -s -w "\\n%{http_code}" -X DELETE -H "Authorization: Bearer ${token}" "${API}/admin/v1/stores/${testStoreId}"`,
+      { encoding: "utf-8" }
+    );
+    const lines = result.trim().split("\n");
+    const status = lines.pop();
+    if (status !== "200") fail("5b", `TV 없는 지점 삭제 실패 (status=${status})`);
+    log("5b", `TV 없는 지점 삭제 OK`);
+  } catch (err) {
+    fail("5b", `삭제 요청 실패: ${err.message}`);
+  }
+  
+  // 5. TV 있는 지점 삭제 시도 (기존 지점 사용, 409 반환해야 함)
+  const stores = curlWithAuth("GET", "/admin/v1/stores");
+  const storeWithTv = stores.items?.find((s) => s.tvCount > 0);
+  if (!storeWithTv) {
+    log("5b", "WARNING: TV 있는 지점이 없어 삭제 보호 테스트 스킵");
+    return;
+  }
+  try {
+    const result = execSync(
+      `curl -s -w "\\n%{http_code}" -X DELETE -H "Authorization: Bearer ${token}" "${API}/admin/v1/stores/${storeWithTv.id}"`,
+      { encoding: "utf-8" }
+    );
+    const lines = result.trim().split("\n");
+    const status = lines.pop();
+    if (status === "409") {
+      log("5b", `TV 있는 지점(${storeWithTv.name}) 삭제 보호 OK: 409 응답`);
+    } else {
+      fail("5b", `삭제 보호 실패 (status=${status})`);
+    }
+  } catch (err) {
+    fail("5b", `요청 실패: ${err.message}`);
+  }
+}
+
 function step6_playerPair() {
-  log("6", "플레이어 페어링...");
+  log("6", "플레이어 페어링 및 Device 생성 확인...");
   const res = curl("POST", "/player/v1/pair", { code: pairingCode });
   if (!res.token) fail("6", `토큰 발급 실패: ${JSON.stringify(res)}`);
   deviceToken = res.token;
   log("6", `기기 토큰 발급 완료`);
+  
+  // 페어링 후 지점에 Device가 생성되었는지 확인
+  const stores = curlWithAuth("GET", "/admin/v1/stores");
+  const ourStore = stores.items?.find((s) => s.id === storeId);
+  if (!ourStore) fail("6", "페어링한 지점을 찾을 수 없음");
+  if (ourStore.tvCount < 1) fail("6", `페어링 후 tvCount가 0임: ${JSON.stringify(ourStore)}`);
+  log("6", `지점 TV 개수 확인 OK: ${ourStore.tvCount}대`);
+}
+
+function step6b_inactiveStorePairingRejection() {
+  log("6b", "비활성 지점 페어링 거부 테스트...");
+  
+  // 비활성 지점 생성
+  const code = `INAC${Date.now() % 10000}`;
+  const created = curlWithAuth("POST", "/admin/v1/stores", { name: "비활성 테스트 지점", code });
+  if (!created.id) fail("6b", `지점 생성 실패: ${JSON.stringify(created)}`);
+  
+  // 비활성화
+  curlWithAuth("PATCH", `/admin/v1/stores/${created.id}`, { isActive: false });
+  
+  // 페어링 코드 발급
+  const session = curlWithAuth("POST", "/admin/v1/pairing-sessions", { storeId: created.id });
+  if (!session.code) fail("6b", `페어링 코드 발급 실패: ${JSON.stringify(session)}`);
+  
+  // 페어링 시도 (실패해야 함)
+  try {
+    const result = execSync(
+      `curl -s -w "\\n%{http_code}" -X POST -H "Content-Type: application/json" -d '{"code":"${session.code}"}' "${API}/player/v1/pair"`,
+      { encoding: "utf-8" }
+    );
+    const lines = result.trim().split("\n");
+    const status = lines.pop();
+    if (status === "400") {
+      log("6b", `비활성 지점 페어링 거부 OK: 400 응답`);
+    } else {
+      fail("6b", `비활성 지점 페어링이 허용됨 (status=${status})`);
+    }
+  } catch (err) {
+    fail("6b", `요청 실패: ${err.message}`);
+  }
+  
+  // 정리: 테스트 지점 삭제
+  curlWithAuth("DELETE", `/admin/v1/stores/${created.id}`);
 }
 
 function step7_playerPrograms() {
-  log("7", "플레이어 프로그램 목록 조회...");
+  log("7", "플레이어 프로그램 목록 조회 (지점 지정 프로그램만)...");
   const res = curl("GET", "/player/v1/programs", null, { "X-Device-Token": deviceToken });
   if (!res.items) fail("7", `목록 조회 실패: ${JSON.stringify(res)}`);
-  log("7", `프로그램 ${res.items.length}개`);
+  
+  // 지점에 지정된 프로그램만 반환되어야 함 (1개)
+  if (res.items.length !== 1) fail("7", `지점 지정 프로그램만 반환되어야 함 (got ${res.items.length})`);
+  log("7", `프로그램 ${res.items.length}개 (지점 지정만)`);
   
   const found = res.items.find((p) => p.id === programId);
-  if (!found) fail("7", "게시한 프로그램이 목록에 없음");
+  if (!found) fail("7", "지정된 프로그램이 목록에 없음");
   log("7", `E2E 프로그램 발견: ${found.name} v${found.publishedVersion}`);
 }
 
@@ -302,7 +413,9 @@ function main() {
     step3b_audioDeleteProtection();
     step4_publishProgram();
     step5_createPairing();
+    step5b_storeUpdateAndDeleteProtection();
     step6_playerPair();
+    step6b_inactiveStorePairingRejection();
     step7_playerPrograms();
     step8_playerProgramDetail();
     step8b_skinDeleteProtection();

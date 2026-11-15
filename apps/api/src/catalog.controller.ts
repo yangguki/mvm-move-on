@@ -42,7 +42,7 @@ export class CatalogController {
   @Get("stores")
   async stores() {
     const rows = await this.prisma.store.findMany({
-      include: { devices: { include: { skin: true } } },
+      include: { devices: { include: { skin: true } }, program: true },
       orderBy: { name: "asc" },
     });
     const items = rows.map((store) => {
@@ -55,10 +55,12 @@ export class CatalogController {
         id: store.id,
         name: store.name,
         code: store.code,
+        isActive: store.isActive,
         tvCount: store.devices.length,
         online,
         offline,
         programName: playing,
+        program: store.program ? { id: store.program.id, name: store.program.name } : null,
         skin: skin ? { id: skin.id, name: skin.name, tone: skin.tone } : null,
         state,
       };

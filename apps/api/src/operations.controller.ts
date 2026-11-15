@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   NotFoundException,
   Param,
   Patch,
@@ -43,15 +44,67 @@ export class OperationsController {
   async updateStore(
     @Req() request: { user: AccessToken },
     @Param("id") id: string,
-    @Body() body: { name?: string },
+    @Body() body: { name?: string; isActive?: boolean; programId?: string | null },
   ) {
     assertHq(request.user);
-    const name = body.name?.trim() ?? "";
-    if (!name) throw new BadRequestException("지점 이름이 필요해요");
     const store = await this.prisma.store.findUnique({ where: { id } });
     if (!store) throw new NotFoundException("지점을 찾을 수 없어요");
-    const updated = await this.prisma.store.update({ where: { id }, data: { name } });
-    return { id: updated.id, name: updated.name, code: updated.code };
+    const data: { name?: string; isActive?: boolean; programId?: string | null } = {};
+    if (typeof body.name === "string") {
+      const name = body.name.trim();
+      if (!name) throw new BadRequestException("지점 이름이 필요해요");
+      data.name = name;
+    }
+    if (typeof body.isActive === "boolean") {
+      data.isActive = body.isActive;
+    }
+    if (body.programId !== undefined) {
+      if (body.programId === null) {
+        data.programId = null;
+      } else if (typeof body.programId === "string") {
+        const program = await this.prisma.program.findUnique({ where: { id: body.programId } });
+        if (!program) throw new NotFoundException("프로그램을 찾을 수 없어요");
+        if (program.status !== "published") throw new BadRequestException("게시된 프로그램만 지정할 수 있어요");
+        data.programId = body.programId;
+      }
+    }
+    const updated = await this.prisma.store.update({
+      where: { id },
+      data,
+      include: { program: true },
+    });
+    return {
+      id: updated.id,
+      name: updated.name,
+      code: updated.code,
+      isActive: updated.isActive,
+      programId: updated.programId,
+      program: updated.program ? { id: updated.program.id, name: updated.program.name } : null,
+    };
+  }
+
+  @Delete("stores/:id")
+  async deleteStore(@Req() request: { user: AccessToken }, @Param("id") id: string) {
+    assertHq(request.user);
+    const store = await this.prisma.store.findUnique({
+      where: { id },
+      include: { _count: { select: { devices: true } } },
+    });
+    if (!store) throw new NotFoundException("지점을 찾을 수 없어요");
+    if (store._count.devices > 0) {
+      throw new ConflictException({
+        message: "연결된 TV가 있어 삭제할 수 없어요. 먼저 비활성화하세요.",
+        deviceCount: store._count.devices,
+      });
+    }
+    if (store.programId) {
+      throw new ConflictException({
+        message: "지정된 프로그램이 있어 삭제할 수 없어요. 먼저 프로그램 지정을 해제하세요.",
+        programId: store.programId,
+      });
+    }
+    await this.prisma.store.delete({ where: { id } });
+    return { ok: true };
   }
 
   @Patch("devices/:id")
