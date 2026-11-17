@@ -20,6 +20,11 @@ import {
   type VideoMap,
 } from "@mvn/shared";
 import { resolveProgramSkin } from "./audio-resolve";
+import {
+  currentHtmlScreenVersions,
+  freezeHtmlSkinScreens,
+  snapshotScreenVersions,
+} from "./html-skin-publish";
 import { AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
 
@@ -85,10 +90,16 @@ type PresentedProgram = SharedProgram & {
   needsRepublish: boolean;
 };
 
+type SkinPublishMeta = {
+  tokens?: Record<string, unknown> | null;
+  kind?: string | null;
+  screenVersions?: Record<string, number> | null;
+};
+
 function present(
   row: { id: string; name: string; status: string; draft: unknown; draftUpdatedAt: Date; publishedVersion: number | null },
   publishedSnapshot?: { items: unknown; skin: unknown } | null,
-  currentSkinTokens?: Record<string, unknown> | null,
+  skinMeta?: SkinPublishMeta | null,
 ): PresentedProgram {
   const draft = row.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
   const program: SharedProgram = {
@@ -102,10 +113,17 @@ function present(
   };
   const play = expand(program);
   let needsRepublish = row.publishedVersion != null && publishedSnapshot != null && !deepEqual(draft, publishedSnapshot);
-  if (!needsRepublish && row.publishedVersion != null && publishedSnapshot != null && currentSkinTokens) {
+  if (!needsRepublish && row.publishedVersion != null && publishedSnapshot != null && skinMeta?.tokens) {
     const pubSkin = publishedSnapshot.skin as { tokens?: Record<string, unknown> } | undefined;
     const pubTokens = pubSkin?.tokens;
-    if (!deepEqual(currentSkinTokens, pubTokens)) {
+    if (!deepEqual(skinMeta.tokens, pubTokens)) {
+      needsRepublish = true;
+    }
+  }
+  if (!needsRepublish && row.publishedVersion != null && publishedSnapshot != null && skinMeta?.kind === "html") {
+    const pubSkin = publishedSnapshot.skin as { screens?: Record<string, { version?: number }> } | undefined;
+    const pubVersions = snapshotScreenVersions(pubSkin?.screens as never);
+    if (!deepEqual(skinMeta.screenVersions ?? {}, pubVersions)) {
       needsRepublish = true;
     }
   }
@@ -144,12 +162,22 @@ export class ProgramsController {
     );
     const skinSlugs = [...new Set(rows.map((r) => (r.draft as { skin?: { id?: string } })?.skin?.id).filter(Boolean))] as string[];
     const skinRows = await this.prisma.skin.findMany({ where: { slug: { in: skinSlugs } } });
-    const skinTokensMap = new Map(skinRows.map((s) => [s.slug, s.tokens as Record<string, unknown>]));
+    const skinMetaMap = new Map(
+      await Promise.all(
+        skinRows.map(async (s) => {
+          const screenVersions = s.kind === "html" ? await currentHtmlScreenVersions(this.prisma, s.id) : null;
+          return [
+            s.slug,
+            { tokens: s.tokens as Record<string, unknown>, kind: s.kind, screenVersions } satisfies SkinPublishMeta,
+          ] as const;
+        }),
+      ),
+    );
     return {
       items: rows.map((r) => {
         const skinSlug = (r.draft as { skin?: { id?: string } })?.skin?.id;
-        const skinTokens = skinSlug ? skinTokensMap.get(skinSlug) : null;
-        return present(r, snapshotMap.get(r.id), skinTokens);
+        const skinMeta = skinSlug ? skinMetaMap.get(skinSlug) ?? null : null;
+        return present(r, snapshotMap.get(r.id), skinMeta);
       }),
     };
   }
@@ -177,13 +205,7 @@ export class ProgramsController {
   async detail(@Param("id") id: string) {
     const row = await this.load(id);
     const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
-    const skinSlug = (row.draft as { skin?: { id?: string } })?.skin?.id;
-    let skinTokens: Record<string, unknown> | null = null;
-    if (skinSlug) {
-      const skinRow = await this.prisma.skin.findFirst({ where: { slug: skinSlug } });
-      if (skinRow) skinTokens = skinRow.tokens as Record<string, unknown>;
-    }
-    return present(row, published, skinTokens);
+    return present(row, published, await this.skinMetaForDraft(row.draft));
   }
 
   @Put(":id")
@@ -207,13 +229,7 @@ export class ProgramsController {
       },
     });
     const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
-    const skinSlug = (row.draft as { skin?: { id?: string } })?.skin?.id;
-    let skinTokens: Record<string, unknown> | null = null;
-    if (skinSlug) {
-      const skinData = await this.prisma.skin.findFirst({ where: { slug: skinSlug } });
-      if (skinData) skinTokens = skinData.tokens as Record<string, unknown>;
-    }
-    return present(row, published, skinTokens);
+    return present(row, published, await this.skinMetaForDraft(row.draft));
   }
 
   @Post(":id/publish")
@@ -223,7 +239,9 @@ export class ProgramsController {
     const nextVersion = (current.publishedVersion ?? 0) + 1;
     const skin = await resolveProgramSkin(this.prisma, draft.skin);
     const skinRow = await this.prisma.skin.findFirst({ where: { slug: draft.skin.id } });
-    const skinTokens = skinRow ? (skinRow.tokens as Record<string, unknown>) : {};
+    const skinKind = skinRow?.kind ?? "tokens";
+    const skinTokens = skinRow && skinKind === "tokens" ? (skinRow.tokens as Record<string, unknown>) : {};
+    const screens = skinRow && skinKind === "html" ? await freezeHtmlSkinScreens(this.prisma, skinRow.id, draft.items) : undefined;
     const videos = await freezeVideos(this.prisma, draft.items);
     const base = validateProgram({
       id: current.id,
@@ -231,7 +249,7 @@ export class ProgramsController {
       status: "published",
       draftUpdatedAt: current.draftUpdatedAt.toISOString(),
       publishedVersion: nextVersion,
-      skin: { ...skin, tokens: skinTokens },
+      skin: { ...skin, kind: skinKind, tokens: skinKind === "tokens" ? skinTokens : undefined, screens },
       items: draft.items,
     });
     const snapshot: PublishedSnapshot = { ...base, videos };
@@ -275,6 +293,19 @@ export class ProgramsController {
           skin: snap.skin,
         };
       }),
+    };
+  }
+
+  private async skinMetaForDraft(draft: unknown): Promise<SkinPublishMeta | null> {
+    const skinSlug = (draft as { skin?: { id?: string } })?.skin?.id;
+    if (!skinSlug) return null;
+    const skinRow = await this.prisma.skin.findFirst({ where: { slug: skinSlug } });
+    if (!skinRow) return null;
+    const screenVersions = skinRow.kind === "html" ? await currentHtmlScreenVersions(this.prisma, skinRow.id) : null;
+    return {
+      tokens: skinRow.tokens as Record<string, unknown>,
+      kind: skinRow.kind,
+      screenVersions,
     };
   }
 

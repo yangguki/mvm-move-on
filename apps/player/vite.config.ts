@@ -1,6 +1,12 @@
+import path from "node:path";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@mvn/shared": path.resolve(__dirname, "../../packages/shared/src/index.ts"),
+    },
+  },
   build: {
     target: "es2017",
     outDir: "dist",

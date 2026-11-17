@@ -34,11 +34,13 @@ function present(row: {
   description: string | null;
   tone: string;
   thumbnailUrl: string | null;
+  kind: string;
   tokens: unknown;
   isActive: boolean;
   isBuiltin: boolean;
   createdAt: Date;
   _count?: { devices: number };
+  screenCount?: number;
 }) {
   return {
     id: row.id,
@@ -47,11 +49,13 @@ function present(row: {
     description: row.description,
     tone: row.tone,
     thumbnailUrl: row.thumbnailUrl,
+    kind: row.kind,
     tokens: row.tokens as SkinTokens,
     isActive: row.isActive,
     isBuiltin: row.isBuiltin,
     createdAt: row.createdAt.toISOString(),
     storeCount: row._count?.devices ?? 0,
+    screenCount: row.screenCount,
   };
 }
 
@@ -64,12 +68,12 @@ export class SkinsController {
   async list() {
     const rows = await this.prisma.skin.findMany({
       orderBy: [{ isBuiltin: "desc" }, { name: "asc" }],
-      include: { _count: { select: { devices: true } } },
+      include: { _count: { select: { devices: true, screens: true } } },
     });
     const programUsage = await this.buildProgramUsageMap();
     return {
       items: rows.map((row) => ({
-        ...present(row),
+        ...present({ ...row, screenCount: row._count.screens }),
         usedInPrograms: programUsage.get(row.slug) || [],
       })),
     };
@@ -79,12 +83,12 @@ export class SkinsController {
   async detail(@Param("id") id: string) {
     const row = await this.prisma.skin.findFirst({
       where: { OR: [{ id }, { slug: id }] },
-      include: { _count: { select: { devices: true } } },
+      include: { _count: { select: { devices: true, screens: true } } },
     });
     if (!row) throw new NotFoundException("스킨을 찾을 수 없어요");
     const programUsage = await this.buildProgramUsageMap();
     return {
-      ...present(row),
+      ...present({ ...row, screenCount: row._count.screens }),
       usedInPrograms: programUsage.get(row.slug) || [],
     };
   }
@@ -101,13 +105,14 @@ export class SkinsController {
         description: input.description,
         tone: input.tone || "linear-gradient(135deg,#333,#666)",
         thumbnailUrl: input.thumbnailUrl,
-        tokens: input.tokens || {},
+        kind: input.kind === "html" ? "html" : "tokens",
+        tokens: input.kind === "html" ? {} : input.tokens || {},
         isActive: true,
         isBuiltin: false,
       },
-      include: { _count: { select: { devices: true } } },
+      include: { _count: { select: { devices: true, screens: true } } },
     });
-    return present(row);
+    return present({ ...row, screenCount: row._count.screens });
   }
 
   @Patch(":id")
@@ -157,11 +162,20 @@ export class SkinsController {
   private parseBody(body: unknown) {
     if (!body || typeof body !== "object") throw new BadRequestException("본문이 필요해요");
     const raw = body as Record<string, unknown>;
-    const slug = typeof raw.slug === "string" ? raw.slug.trim().toLowerCase().replace(/\s+/g, "-") : "";
+    const kind = raw.kind === "html" ? "html" : "tokens";
     const name = typeof raw.name === "string" ? raw.name.trim() : "";
-    if (!slug) throw new BadRequestException("slug가 필요해요");
     if (!name) throw new BadRequestException("name이 필요해요");
+    let slug = typeof raw.slug === "string" ? raw.slug.trim().toLowerCase().replace(/\s+/g, "-") : "";
+    if (!slug) {
+      const base = name
+        .toLowerCase()
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9-]/g, "");
+      slug = base || `html-skin-${Date.now()}`;
+    }
+    if (kind === "tokens" && !slug) throw new BadRequestException("slug가 필요해요");
     return {
+      kind,
       slug,
       name,
       description: typeof raw.description === "string" ? raw.description.trim() || null : null,

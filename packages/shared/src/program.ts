@@ -27,9 +27,28 @@ export type ResolvedVoicePack = {
   cues: Record<VoiceCueKey, ResolvedAudioRef>;
 };
 
+export type SkinKind = "tokens" | "html";
+
+export type SkinScreenSnapshot = {
+  id: string;
+  title: string;
+  html: string;
+  css: string;
+  hasVideoSlot: boolean;
+  hasNextVideoSlot: boolean;
+  titleOnly: boolean;
+  version: number;
+};
+
+export type HtmlSkinScreensMap = Record<string, SkinScreenSnapshot>;
+
 export type ProgramSkin = {
   id: string;
   options: SkinOptions;
+  /** 게시 스냅샷: 스킨 종류 */
+  kind?: SkinKind;
+  /** 게시 스냅샷: html 스킨 화면 동결본 */
+  screens?: HtmlSkinScreensMap;
   /** 게시 스냅샷에만 url까지 풀려 들어갑니다 */
   music?: ResolvedAudioRef;
   voicePack?: ResolvedVoicePack;
@@ -44,6 +63,7 @@ export type Step = {
   type: StepType;
   durationSec: number;
   videoId?: string;
+  screenId?: string;
   label?: string;
   text?: string;
 };
@@ -132,6 +152,7 @@ export type PlayItem = {
   type: StepType;
   durationSec: number;
   video?: Video;
+  screenId?: string;
   label: string;
   next?: PlayNext;
 };
@@ -215,6 +236,7 @@ export function expand(program: Program, videos: Video[] | VideoMap = []): PlayI
       type: step.type,
       durationSec: step.durationSec,
       video: step.video,
+      screenId: step.screenId,
       label: stepLabel(step, videoMap),
       next: nextPayload(step, found),
     };

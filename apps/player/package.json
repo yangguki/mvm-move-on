@@ -9,6 +9,9 @@
     "preview": "vite preview --port 3002",
     "generate-icons": "node scripts/generate-icons.mjs"
   },
+  "dependencies": {
+    "@mvn/shared": "workspace:*"
+  },
   "devDependencies": {
     "sharp": "^0.33.0",
     "typescript": "^5.3.3",

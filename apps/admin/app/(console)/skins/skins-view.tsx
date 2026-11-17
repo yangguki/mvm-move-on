@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { Check, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Check, Eye, EyeOff, Plus, Trash2 } from "lucide-react";
+import { HtmlSkinPanel } from "./html-skin-panel";
 
 type SkinTokens = Record<string, unknown>;
 
@@ -13,10 +14,12 @@ type SkinItem = {
   description: string | null;
   tone: string;
   thumbnailUrl: string | null;
+  kind?: string;
   tokens: SkinTokens;
   isActive: boolean;
   isBuiltin: boolean;
   storeCount: number;
+  screenCount?: number;
   usedInPrograms: string[];
 };
 
@@ -148,6 +151,26 @@ export function SkinsView() {
     }
   }
 
+  async function createHtmlSkin() {
+    const name = prompt("HTML 스킨 제목");
+    if (!name?.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const row = await api<SkinItem>("/admin/v1/skins", {
+        method: "POST",
+        body: JSON.stringify({ kind: "html", name: name.trim() }),
+      });
+      await reload();
+      setSelected(row);
+      setNotice(`HTML 스킨 "${row.name}" 생성됨`);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "생성하지 못했어요");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveTokens() {
     if (!selected) return;
     setBusy(true);
@@ -180,16 +203,26 @@ export function SkinsView() {
           <p>TV 화면 테마를 고르고 강조 색·로고·휴식 이미지·BGM만 바꿔요. 화면 구성은 템플릿이 지켜줘요.</p>
         </div>
         <div className="row">
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveTokens()}>
-            <Check className="i" aria-hidden />
-            저장하고 적용
+          {selected?.kind !== "html" ? (
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveTokens()}>
+              <Check className="i" aria-hidden />
+              저장하고 적용
+            </button>
+          ) : null}
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void createHtmlSkin()}>
+            <Plus className="i" aria-hidden />
+            HTML 스킨 등록
           </button>
         </div>
       </div>
       {error ? <p className="form-error" style={{ marginTop: -8 }}>{error}</p> : null}
       {notice ? <p className="pair-box" style={{ marginTop: -8 }}>{notice}</p> : null}
+      {selected?.kind === "html" ? (
+        <HtmlSkinPanel skin={selected} onNotice={setNotice} onError={setError} />
+      ) : null}
       <div className="skin-layout">
         <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
+          {selected?.kind !== "html" ? (
           <article className="card">
             <div className="card-head" style={{ minHeight: 52, padding: "12px 20px" }}>
               <div className="row" style={{ gap: 12 }}>
@@ -222,6 +255,7 @@ export function SkinsView() {
               </div>
             </div>
           </article>
+          ) : null}
           <div>
             <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
               <h2 className="t-h2">
@@ -248,7 +282,9 @@ export function SkinsView() {
                   ) : null}
                   <b>{skin.name}</b>
                   <small>
+                    {skin.kind === "html" ? "HTML · " : ""}
                     {(skin.storeCount ?? 0) > 0 ? `${skin.storeCount}개 기기` : "기기 없음"}
+                    {skin.kind === "html" && (skin.screenCount ?? 0) > 0 ? ` · 화면 ${skin.screenCount}` : ""}
                     {(skin.usedInPrograms?.length ?? 0) > 0 ? ` · ${skin.usedInPrograms.length}개 프로그램` : ""}
                     {!skin.isActive ? " · 비활성" : ""}
                   </small>
@@ -258,6 +294,7 @@ export function SkinsView() {
           </div>
         </div>
 
+        {selected?.kind !== "html" ? (
         <aside className="card" style={{ display: "flex", flexDirection: "column" }}>
           <div className="card-head" style={{ minHeight: 52, padding: "12px 20px" }}>
             <h2 className="t-h2">꾸미기</h2>
@@ -345,6 +382,7 @@ export function SkinsView() {
             </div>
           )}
         </aside>
+        ) : null}
       </div>
     </>
   );

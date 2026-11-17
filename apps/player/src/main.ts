@@ -7,7 +7,7 @@ type Program = {
 };
 type ProgramDetail = Program & {
   playItems: Array<{ index: number; durationSec: number }>;
-  skin: { id: string; options: Record<string, unknown> };
+  skin: { id: string; kind?: string; options: Record<string, unknown>; screens?: Record<string, unknown> };
   videos: Record<string, unknown>;
 };
 
@@ -30,6 +30,7 @@ let selectedProgram: Program | null = null;
 let deviceToken: string | null = null;
 let isPaused = false;
 let skinIframe: HTMLIFrameElement | null = null;
+let htmlSkinPlayer: import("./html-skin-player").HtmlSkinPlayer | null = null;
 
 function showScreen(name: ScreenName) {
   Object.entries(screens).forEach(([key, el]) => {
@@ -188,6 +189,18 @@ async function startPlay() {
 function launchSkin(program: ProgramDetail) {
   const wrap = $("player-wrap");
   wrap.innerHTML = "";
+  if (program.skin?.kind === "html") {
+    void import("./html-skin-player").then(({ HtmlSkinPlayer }) => {
+      htmlSkinPlayer = new HtmlSkinPlayer(wrap, {
+        onDone: () => {
+          cleanup();
+          showScreen("done");
+        },
+      });
+      htmlSkinPlayer.start(program as never);
+    });
+    return;
+  }
   skinIframe = document.createElement("iframe");
   skinIframe.src = "/skins/neon-arcade/index.html";
   skinIframe.allow = "autoplay";
@@ -209,6 +222,8 @@ function onSkinMessage(ev: MessageEvent) {
 
 function cleanup() {
   window.removeEventListener("message", onSkinMessage);
+  htmlSkinPlayer?.destroy();
+  htmlSkinPlayer = null;
   skinIframe = null;
   isPaused = false;
   pauseOverlay.classList.remove("show");

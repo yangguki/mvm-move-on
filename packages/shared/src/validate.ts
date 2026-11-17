@@ -1,4 +1,4 @@
-import type { Group, Program, ProgramItem, ResolvedVoicePack, Step, Video } from "./program";
+import type { Group, HtmlSkinScreensMap, Program, ProgramItem, ResolvedVoicePack, SkinKind, Step, Video } from "./program";
 import { VOICE_CUE_KEYS } from "./audio";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -29,6 +29,7 @@ function validateStep(raw: unknown, path: string): Step {
     durationSec,
   };
   if (raw.videoId != null) step.videoId = asString(raw.videoId, `${path}.videoId`);
+  if (raw.screenId != null) step.screenId = asString(raw.screenId, `${path}.screenId`);
   if (raw.label != null) step.label = asString(raw.label, `${path}.label`);
   if (raw.text != null) step.text = asString(raw.text, `${path}.text`);
   return step;
@@ -79,6 +80,9 @@ export function validateProgram(raw: unknown): Program {
   if (raw.skin.options.musicId != null) options.musicId = asString(raw.skin.options.musicId, "skin.options.musicId");
   if (raw.skin.options.voicePackId != null) options.voicePackId = asString(raw.skin.options.voicePackId, "skin.options.voicePackId");
   const skin: Program["skin"] = { id: skinId, options };
+  if (raw.skin.kind === "html" || raw.skin.kind === "tokens") skin.kind = raw.skin.kind as SkinKind;
+  if (isRecord(raw.skin.tokens)) skin.tokens = raw.skin.tokens as Record<string, unknown>;
+  if (isRecord(raw.skin.screens)) skin.screens = raw.skin.screens as HtmlSkinScreensMap;
   if (isRecord(raw.skin.music) && typeof raw.skin.music.url === "string") {
     skin.music = {
       id: asString(raw.skin.music.id, "skin.music.id"),
