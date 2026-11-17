@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 /**
- * 샘플 HTML 스킨 1개 + 화면 2개 (영상 운동 / 타이틀 전용)
+ * HTML 스킨 시드: 샘플 1종 + neon-arcade 화면 10종 (파일 기반)
  */
 import { PrismaClient } from "../packages/db/src/generated/client/index.js";
+import {
+  loadNeonArcadeHtmlScreens,
+  loadNeonArcadeManifest,
+} from "../packages/shared/neon-arcade-screens/load.mjs";
 
 const prisma = new PrismaClient();
 
@@ -22,7 +26,7 @@ const TITLE_HTML = `<span class="title-only">
 
 const TITLE_CSS = `.title-only{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#0a0e12;color:#fff}`;
 
-async function main() {
+async function upsertSampleHtmlSkin() {
   const slug = "sample-html-workout";
   const skin = await prisma.skin.upsert({
     where: { slug },
@@ -65,6 +69,53 @@ async function main() {
   });
 
   console.log(`HTML 스킨 준비됨: ${skin.slug} (${skin.id})`);
+}
+
+async function upsertNeonArcadeHtmlSkin() {
+  const manifest = loadNeonArcadeManifest();
+  const screens = loadNeonArcadeHtmlScreens();
+
+  const existing = await prisma.skin.findUnique({ where: { slug: manifest.slug } });
+
+  const skin = await prisma.skin.upsert({
+    where: { slug: manifest.slug },
+    update: {
+      name: manifest.name,
+      tone: manifest.tone,
+      kind: "html",
+      ...(existing?.tokens && Object.keys(existing.tokens).length > 0 ? { tokens: existing.tokens } : {}),
+    },
+    create: {
+      slug: manifest.slug,
+      name: manifest.name,
+      tone: manifest.tone,
+      kind: "html",
+      tokens: existing?.tokens ?? {},
+      isBuiltin: true,
+      isActive: true,
+    },
+  });
+
+  await prisma.skinScreen.deleteMany({ where: { skinId: skin.id } });
+  await prisma.skinScreen.createMany({
+    data: screens.map((s) => ({
+      skinId: skin.id,
+      title: s.title,
+      html: s.html,
+      css: s.css,
+      hasVideoSlot: s.hasVideoSlot,
+      hasNextVideoSlot: s.hasNextVideoSlot,
+      titleOnly: s.titleOnly,
+      sortOrder: s.sortOrder,
+    })),
+  });
+
+  console.log(`neon-arcade HTML 화면 ${screens.length}개 준비됨: ${skin.slug} (${skin.id})`);
+}
+
+async function main() {
+  await upsertSampleHtmlSkin();
+  await upsertNeonArcadeHtmlSkin();
   await prisma.$disconnect();
 }
 

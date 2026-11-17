@@ -1,0 +1,77 @@
+{
+  "slug": "neon-arcade",
+  "name": "네온 아케이드",
+  "tone": "linear-gradient(135deg,#00f0ff,#ff2bd6)",
+  "screens": [
+    {
+      "title": "수업 대기",
+      "htmlFile": "class-wait.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "title": "웜업 타이틀",
+      "htmlFile": "warmup-title.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "title": "웜업",
+      "htmlFile": "warmup.html",
+      "hasVideoSlot": true,
+      "hasNextVideoSlot": false,
+      "titleOnly": false
+    },
+    {
+      "title": "운동 대기",
+      "htmlFile": "exercise-wait.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "title": "운동",
+      "htmlFile": "exercise.html",
+      "hasVideoSlot": true,
+      "hasNextVideoSlot": false,
+      "titleOnly": false
+    },
+    {
+      "title": "휴식",
+      "htmlFile": "rest.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": true,
+      "titleOnly": false
+    },
+    {
+      "title": "체인지",
+      "htmlFile": "change.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "title": "체인지 후 미리보기",
+      "htmlFile": "change-preview.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": true,
+      "titleOnly": false
+    },
+    {
+      "title": "쿨다운 타이틀",
+      "htmlFile": "cooldown-title.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "title": "완료",
+      "htmlFile": "complete.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    }
+  ]
+}

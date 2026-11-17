@@ -34,6 +34,7 @@ type Step = {
   subtitle: string | null;
   seconds: number;
   videoId: string | null;
+  screenId: string | null;
   groupKey: string | null;
   groupLabel: string | null;
   groupRepeat: number | null;
@@ -43,7 +44,14 @@ type VideoItem = { id: string; name: string; url: string; durationSec: number; t
 type AudioItem = { id: string; name: string; kind: string; url: string; durationSec: number; mimeType: string };
 type VoicePackItem = { id: string; name: string; isDefault: boolean };
 type VersionItem = { id: string; version: number; name: string; publishedAt: string; stepCount: number };
-type SkinItem = { id: string; slug: string; name: string; tokens: Record<string, unknown>; isActive: boolean };
+type SkinItem = { id: string; slug: string; name: string; kind?: string; tokens: Record<string, unknown>; isActive: boolean };
+type SkinScreenListItem = {
+  id: string;
+  title: string;
+  hasVideoSlot: boolean;
+  hasNextVideoSlot: boolean;
+  titleOnly: boolean;
+};
 
 type Block =
   | { type: "single"; index: number; step: Step }
@@ -78,6 +86,7 @@ function fromShared(program: SharedProgram): Step[] {
           subtitle: step.text ?? null,
           seconds: step.durationSec,
           videoId: step.videoId ?? null,
+          screenId: step.screenId ?? null,
           groupKey: item.id,
           groupLabel: item.id,
           groupRepeat: item.repeat,
@@ -90,6 +99,7 @@ function fromShared(program: SharedProgram): Step[] {
         subtitle: item.text ?? null,
         seconds: item.durationSec,
         videoId: item.videoId ?? null,
+        screenId: item.screenId ?? null,
         groupKey: null,
         groupLabel: null,
         groupRepeat: null,
@@ -151,6 +161,13 @@ function toSharedType(kind: Kind): SharedStep["type"] {
   return kind;
 }
 
+function stepKindFromScreen(screen: SkinScreenListItem | undefined): Kind {
+  if (!screen) return "exercise";
+  if (screen.hasNextVideoSlot) return "rest";
+  if (screen.hasVideoSlot) return "exercise";
+  return "countdown";
+}
+
 function toSharedProgram(input: {
   id: string;
   name: string;
@@ -159,6 +176,7 @@ function toSharedProgram(input: {
   publishedVersion: number | null;
   steps: Step[];
   skinSlug?: string;
+  skinKind?: string;
 }): SharedProgram {
   const items: ProgramItem[] = [];
   let index = 0;
@@ -172,6 +190,7 @@ function toSharedProgram(input: {
         label: step.label,
         text: step.subtitle ?? undefined,
         videoId: step.videoId ?? undefined,
+        screenId: step.screenId ?? undefined,
       });
       index += 1;
       continue;
@@ -188,6 +207,7 @@ function toSharedProgram(input: {
         label: member.label,
         text: member.subtitle ?? undefined,
         videoId: member.videoId ?? undefined,
+        screenId: member.screenId ?? undefined,
       });
       index += 1;
     }
@@ -198,16 +218,18 @@ function toSharedProgram(input: {
       steps: groupSteps,
     });
   }
+  const skin: SharedProgram["skin"] = {
+    id: input.skinSlug || "neon-arcade",
+    options: { pointColor: "#C8F31D", nextLeadSec: 10 },
+  };
+  if (input.skinKind === "html" || input.skinKind === "tokens") skin.kind = input.skinKind as "html" | "tokens";
   return {
     id: input.id || "draft",
     name: input.name || "프로그램",
     status: input.status === "published" ? "published" : "draft",
     draftUpdatedAt: input.updatedAt || new Date().toISOString(),
     publishedVersion: input.publishedVersion,
-    skin: {
-      id: input.skinSlug || "neon-arcade",
-      options: { pointColor: "#C8F31D", nextLeadSec: 10 },
-    },
+    skin,
     items,
   };
 }
@@ -224,6 +246,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const [audioItems, setAudioItems] = useState<AudioItem[]>([]);
   const [voicePacks, setVoicePacks] = useState<VoicePackItem[]>([]);
   const [skins, setSkins] = useState<SkinItem[]>([]);
+  const [skinScreens, setSkinScreens] = useState<SkinScreenListItem[]>([]);
   const [selectedSkinSlug, setSelectedSkinSlug] = useState("neon-arcade");
   const [steps, setSteps] = useState<Step[]>([]);
   const [selected, setSelected] = useState(0);
@@ -295,8 +318,30 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId]);
 
+  const selectedSkin = useMemo(() => skins.find((s) => s.slug === selectedSkinSlug), [skins, selectedSkinSlug]);
+  const isHtmlSkin = selectedSkin?.kind === "html";
+
+  useEffect(() => {
+    if (!selectedSkin || selectedSkin.kind !== "html") {
+      setSkinScreens([]);
+      return;
+    }
+    let cancelled = false;
+    void api<{ items: SkinScreenListItem[] }>(`/admin/v1/skins/${selectedSkin.id}/screens`)
+      .then((data) => {
+        if (!cancelled) setSkinScreens(data.items);
+      })
+      .catch(() => {
+        if (!cancelled) setSkinScreens([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSkin]);
+
   function persist(nextSteps: Step[], nextName = name, nextSkin = skinOptions, nextSkinSlug = selectedSkinSlug) {
     if (!programId) return Promise.resolve(undefined);
+    const skinRow = skins.find((s) => s.slug === nextSkinSlug);
     const draftProgram = toSharedProgram({
       id: programId,
       name: nextName,
@@ -305,6 +350,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       publishedVersion: published,
       steps: nextSteps,
       skinSlug: nextSkinSlug,
+      skinKind: skinRow?.kind === "html" || skinRow?.kind === "tokens" ? skinRow.kind : undefined,
     });
     draftProgram.skin.options = nextSkin;
     const run = saveChain.current.then(async () => {
@@ -393,16 +439,22 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
     setSelected(to);
   }
 
+  function defaultScreenForStep(): SkinScreenListItem | undefined {
+    return skinScreens.find((s) => s.hasVideoSlot) ?? skinScreens[0];
+  }
+
   function addStep() {
     setSteps((current) => {
+      const screen = isHtmlSkin ? defaultScreenForStep() : undefined;
       const next = [
         ...current,
         {
-          kind: "exercise" as const,
-          label: "새 운동",
-          subtitle: "운동",
-          seconds: 45,
-          videoId: videos[0]?.id ?? null,
+          kind: isHtmlSkin ? stepKindFromScreen(screen) : ("exercise" as const),
+          label: screen?.title ?? "새 운동",
+          subtitle: isHtmlSkin ? null : "운동",
+          seconds: screen?.hasVideoSlot && videos[0] ? videos[0].durationSec : 45,
+          videoId: isHtmlSkin ? (screen?.hasVideoSlot ? videos[0]?.id ?? null : null) : videos[0]?.id ?? null,
+          screenId: screen?.id ?? null,
           groupKey: null,
           groupLabel: null,
           groupRepeat: null,
@@ -419,16 +471,27 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       const next = [
         ...current,
         {
-          kind: "exercise" as const,
-          label: "새 운동",
-          subtitle: "운동",
+          kind: isHtmlSkin ? stepKindFromScreen(skinScreens.find((s) => s.hasVideoSlot)) : ("exercise" as const),
+          label: isHtmlSkin ? (skinScreens.find((s) => s.hasVideoSlot)?.title ?? "새 운동") : "새 운동",
+          subtitle: isHtmlSkin ? null : "운동",
           seconds: 45,
-          videoId: videos[0]?.id ?? null,
+          videoId: isHtmlSkin ? (skinScreens.find((s) => s.hasVideoSlot) ? videos[0]?.id ?? null : null) : videos[0]?.id ?? null,
+          screenId: isHtmlSkin ? (skinScreens.find((s) => s.hasVideoSlot)?.id ?? skinScreens[0]?.id ?? null) : null,
           groupKey: key,
           groupLabel: "새 그룹",
           groupRepeat: 3,
         },
-        { kind: "rest" as const, label: "휴식", subtitle: null, seconds: 15, videoId: null, groupKey: key, groupLabel: "새 그룹", groupRepeat: 3 },
+        {
+          kind: isHtmlSkin ? stepKindFromScreen(skinScreens.find((s) => s.hasNextVideoSlot) ?? skinScreens.find((s) => s.titleOnly)) : ("rest" as const),
+          label: isHtmlSkin ? (skinScreens.find((s) => s.hasNextVideoSlot)?.title ?? skinScreens.find((s) => s.titleOnly)?.title ?? "휴식") : "휴식",
+          subtitle: null,
+          seconds: 15,
+          videoId: null,
+          screenId: isHtmlSkin ? (skinScreens.find((s) => s.hasNextVideoSlot)?.id ?? skinScreens.find((s) => s.titleOnly)?.id ?? null) : null,
+          groupKey: key,
+          groupLabel: "새 그룹",
+          groupRepeat: 3,
+        },
       ];
       setSelected(next.length - 2);
       return next;
@@ -539,6 +602,11 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   }
 
   const current = steps[selected];
+  const currentScreen = useMemo(
+    () => (current?.screenId ? skinScreens.find((s) => s.id === current.screenId) : undefined),
+    [current?.screenId, skinScreens],
+  );
+  const showExerciseVideo = isHtmlSkin ? !!currentScreen?.hasVideoSlot : current?.kind === "exercise";
   const sharedProgram = useMemo(() => {
     const program = toSharedProgram({
       id: programId,
@@ -548,6 +616,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       publishedVersion: published,
       steps,
       skinSlug: selectedSkinSlug,
+      skinKind: selectedSkin?.kind === "html" || selectedSkin?.kind === "tokens" ? selectedSkin.kind : undefined,
     });
     program.skin.options = skinOptions;
     const currentSkin = skins.find((s) => s.slug === selectedSkinSlug);
@@ -555,7 +624,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       (program.skin as { tokens?: Record<string, unknown> }).tokens = currentSkin.tokens;
     }
     return program;
-  }, [programId, name, status, updatedAt, published, steps, skinOptions, selectedSkinSlug, skins]);
+  }, [programId, name, status, updatedAt, published, steps, skinOptions, selectedSkinSlug, skins, selectedSkin]);
   const videoMap = useMemo(() => Object.fromEntries(videos.map((video) => [video.id, video])), [videos]);
   const playItems = useMemo(() => expand(sharedProgram, videoMap), [sharedProgram, videoMap]);
   const total = playTotalSec(playItems);
@@ -1029,23 +1098,56 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
           {current ? (
             <>
               <div className="insp-body">
-                <div className="field">
-                  <span className="label">단계 유형</span>
-                  <div className="seg seg-full">
-                    {(
-                      [
-                        ["countdown", "카운트다운"],
-                        ["exercise", "운동"],
-                        ["rest", "휴식"],
-                      ] as const
-                    ).map(([kind, label]) => (
-                      <button key={kind} type="button" className={current.kind === kind ? "on" : undefined} onClick={() => update(selected, { kind })}>
-                        {label}
-                      </button>
-                    ))}
+                {isHtmlSkin ? (
+                  <div className="field">
+                    <span className="label">화면</span>
+                    <select
+                      className="input"
+                      value={current.screenId ?? ""}
+                      onChange={(event) => {
+                        const screen = skinScreens.find((s) => s.id === event.target.value);
+                        const patch: Partial<Step> = {
+                          screenId: event.target.value || null,
+                          kind: stepKindFromScreen(screen),
+                          label: screen?.title ?? current.label,
+                        };
+                        if (!screen?.hasVideoSlot) {
+                          patch.videoId = null;
+                        }
+                        update(selected, patch);
+                      }}
+                    >
+                      <option value="">화면 선택</option>
+                      {skinScreens.map((screen) => (
+                        <option key={screen.id} value={screen.id}>
+                          {screen.title}
+                          {screen.hasVideoSlot ? " · 영상" : screen.hasNextVideoSlot ? " · 다음 영상" : screen.titleOnly ? " · 타이틀" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {currentScreen?.hasNextVideoSlot ? (
+                      <small>다음 영상은 이후 운동 스텝 영상을 플레이어가 자동 사용해요</small>
+                    ) : null}
                   </div>
-                </div>
-                {current.kind === "exercise" ? (
+                ) : (
+                  <div className="field">
+                    <span className="label">단계 유형</span>
+                    <div className="seg seg-full">
+                      {(
+                        [
+                          ["countdown", "카운트다운"],
+                          ["exercise", "운동"],
+                          ["rest", "휴식"],
+                        ] as const
+                      ).map(([kind, label]) => (
+                        <button key={kind} type="button" className={current.kind === kind ? "on" : undefined} onClick={() => update(selected, { kind })}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {showExerciseVideo ? (
                   <div className="field">
                     <span className="label">운동 영상</span>
                     <div className="media">
@@ -1064,9 +1166,9 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                             const video = videos.find((item) => item.id === event.target.value);
                             const patch: Partial<Step> = {
                               videoId: event.target.value || null,
-                              label: current.label || video?.name || "새 운동",
+                              label: isHtmlSkin ? current.label : current.label || video?.name || "새 운동",
                             };
-                            if (video && !current.seconds) {
+                            if (video) {
                               patch.seconds = video.durationSec;
                             }
                             update(selected, patch);
@@ -1079,7 +1181,16 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                             </option>
                           ))}
                         </select>
-                        <small>URL 등록 방식 · GIF→mp4 변환은 나중에</small>
+                        {(() => {
+                          const picked = videos.find((video) => video.id === current.videoId);
+                          return picked ? (
+                            <small>
+                              영상 길이 {picked.durationSec}초 (읽기 전용) · 단계 시간 {current.seconds}초
+                            </small>
+                          ) : (
+                            <small>URL 등록 방식 · GIF→mp4 변환은 나중에</small>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="two" style={{ marginTop: 8 }}>
@@ -1115,7 +1226,19 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                   />
                 </div>
                 <div className="field">
-                  <span className="label">{current.kind === "rest" ? "휴식 시간" : current.kind === "countdown" ? "카운트다운" : "운동 시간"}</span>
+                  <span className="label">
+                    {isHtmlSkin
+                      ? currentScreen?.titleOnly
+                        ? "재생 시간"
+                        : currentScreen?.hasVideoSlot
+                          ? "재생 시간 (영상과 별도 조정 가능)"
+                          : "재생 시간"
+                      : current.kind === "rest"
+                        ? "휴식 시간"
+                        : current.kind === "countdown"
+                          ? "카운트다운"
+                          : "운동 시간"}
+                  </span>
                   <div className="stepper">
                     <button type="button" aria-label="5초 줄이기" onClick={() => update(selected, { seconds: Math.max(1, current.seconds - 5) })}>
                       <Minus className="i" aria-hidden />

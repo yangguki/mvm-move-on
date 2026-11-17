@@ -1,0 +1,18 @@
+<div class="na-stage">
+  <div class="na-scan"></div>
+  <div class="na-floor"></div>
+  <div class="na-hud-top">
+    <div class="na-panel" style="padding:0 20px;gap:8px">
+      <span class="na-lbl">STEP</span>
+      <span class="na-step">{{stepIndex}} / {{stepTotal}}</span>
+    </div>
+    <div class="na-panel na-name na-title">{{label}}</div>
+    <div class="na-panel na-timer-sm na-timer">{{remainingSec}}</div>
+  </div>
+  <div class="na-bar"><i></i></div>
+  <section class="na-vbox">
+    <div data-mvn-video class="na-video"></div>
+    <div class="na-frame"></div>
+  </section>
+  <footer class="na-meta" style="position:absolute;left:48px;bottom:36px">SET {{set}} / {{setTotal}} · {{totalSec}}초</footer>
+</div>

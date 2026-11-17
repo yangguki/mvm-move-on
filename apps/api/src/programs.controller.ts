@@ -14,6 +14,7 @@ import {
   expand,
   playTotalSec,
   validateProgram,
+  validateHtmlProgramSteps,
   type Program as SharedProgram,
   type PublishedSnapshot,
   type Video,
@@ -69,7 +70,10 @@ type DraftBody = {
   skin?: unknown;
 };
 
-function asDraft(raw: unknown): { items: SharedProgram["items"]; skin: SharedProgram["skin"] } {
+async function asDraft(
+  prisma: PrismaService,
+  raw: unknown,
+): Promise<{ items: SharedProgram["items"]; skin: SharedProgram["skin"] }> {
   try {
     const checked = validateProgram({
       id: "draft",
@@ -79,6 +83,17 @@ function asDraft(raw: unknown): { items: SharedProgram["items"]; skin: SharedPro
       publishedVersion: null,
       ...(typeof raw === "object" && raw ? raw : {}),
     });
+    const skinRow = await prisma.skin.findFirst({ where: { slug: checked.skin.id } });
+    if (skinRow?.kind === "html") {
+      const screenRows = await prisma.skinScreen.findMany({
+        where: { skinId: skinRow.id },
+        select: { id: true, hasVideoSlot: true, hasNextVideoSlot: true, titleOnly: true },
+      });
+      validateHtmlProgramSteps(checked.items, screenRows);
+      checked.skin.kind = "html";
+    } else if (skinRow?.kind === "tokens") {
+      checked.skin.kind = "tokens";
+    }
     return { items: checked.items, skin: checked.skin };
   } catch (error) {
     throw new BadRequestException(error instanceof Error ? error.message : "프로그램 draft가 올바르지 않아요");
@@ -186,7 +201,7 @@ export class ProgramsController {
   async create(@Body() body: { name?: string; draft?: DraftBody }) {
     const name = body.name?.trim() ?? "";
     if (!name) throw new BadRequestException("프로그램 이름이 필요해요");
-    const draft = asDraft({
+    const draft = await asDraft(this.prisma, {
       name,
       status: "draft",
       items: body.draft?.items ?? [{ id: "guide-1", type: "guide", durationSec: 10, label: "시작 카운트다운" }],
@@ -213,7 +228,7 @@ export class ProgramsController {
     const current = await this.load(id);
     const name = body.name?.trim() || current.name;
     const incoming = body.draft ?? { items: body.items, skin: body.skin };
-    const draft = asDraft({
+    const draft = await asDraft(this.prisma, {
       name,
       status: "draft",
       items: incoming.items ?? (current.draft as DraftBody).items,
