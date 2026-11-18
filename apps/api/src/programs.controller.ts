@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -9,6 +11,11 @@ import {
   Put,
   UseGuards,
 } from "@nestjs/common";
+import { programDeleteBlockedMessage } from "./program-delete";
+import {
+  collectMissingPublishVideos,
+  missingPublishVideosMessage,
+} from "./program-publish-validate";
 import {
   collectVideoRefs,
   expand,
@@ -264,6 +271,26 @@ export class ProgramsController {
     const skinRow = await this.prisma.skin.findFirst({ where: { slug: draft.skin.id } });
     const skinKind = skinRow?.kind ?? "tokens";
     const skinTokens = skinRow && skinKind === "tokens" ? (skinRow.tokens as Record<string, unknown>) : {};
+    const screenRows =
+      skinRow && skinKind === "html"
+        ? await this.prisma.skinScreen.findMany({
+            where: { skinId: skinRow.id },
+            select: { id: true, hasVideoSlot: true, hasNextVideoSlot: true, titleOnly: true },
+          })
+        : [];
+    const missingVideos = collectMissingPublishVideos(draft.items, {
+      skinKind,
+      screens: screenRows,
+    });
+    const missingMessage = missingPublishVideosMessage(missingVideos);
+    if (missingMessage) throw new BadRequestException(missingMessage);
+    if (skinKind === "html") {
+      try {
+        validateHtmlProgramSteps(draft.items, screenRows);
+      } catch (error) {
+        throw new BadRequestException(error instanceof Error ? error.message : "프로그램 draft가 올바르지 않아요");
+      }
+    }
     const screens = skinRow && skinKind === "html" ? await freezeHtmlSkinScreens(this.prisma, skinRow.id, draft.items) : undefined;
     const videos = await freezeVideos(this.prisma, draft.items);
     const base = validateProgram({
@@ -317,6 +344,22 @@ export class ProgramsController {
         };
       }),
     };
+  }
+
+  @Delete(":id")
+  async remove(@Param("id") id: string) {
+    const current = await this.prisma.program.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException("프로그램을 찾을 수 없어요");
+
+    const assignedStoreCount = await this.prisma.store.count({ where: { programId: id } });
+    const blocked = programDeleteBlockedMessage(assignedStoreCount);
+    if (blocked) throw new ConflictException(blocked);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.programVersion.deleteMany({ where: { programId: id } });
+      await tx.program.delete({ where: { id } });
+    });
+    return { ok: true };
   }
 
   private async skinMetaForDraft(draft: unknown): Promise<SkinPublishMeta | null> {

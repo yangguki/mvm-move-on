@@ -210,6 +210,10 @@ button.check { padding: 0; cursor: pointer; color: var(--volt-500); }
 .step .nm b { display: block; font-size: 13px; font-weight: 600; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .step .nm small { display: block; font-size: 11px; line-height: 14px; color: var(--text-3); }
 .step .dur { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); }
+.step .ord { display: flex; flex-direction: column; flex: none; gap: 0; margin-left: 2px; }
+.step .ord-btn { width: 18px; height: 14px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--text-3); font-size: 9px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.step .ord-btn:hover:not(:disabled) { background: var(--gray-100); color: var(--ink-950); }
+.step .ord-btn:disabled { opacity: 0.25; cursor: default; }
 .step.rest .nm b { font-weight: 500; color: var(--text-2); }
 .step.sel { background: var(--surface); border-color: var(--ink-950); box-shadow: 0 0 0 3px rgba(200,243,29,.45); }
 .group { margin: 6px 0 2px; border-radius: 10px; background: var(--gray-25); border: 1px solid var(--gray-100); padding: 0 0 4px; position: relative; }

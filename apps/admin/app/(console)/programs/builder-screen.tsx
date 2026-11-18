@@ -13,6 +13,7 @@ import {
   GripVertical,
   History,
   Minus,
+  Pause,
   Play,
   Plus,
   Repeat2,
@@ -173,9 +174,32 @@ function toSharedType(kind: Kind): SharedStep["type"] {
 
 function stepKindFromScreen(screen: SkinScreenListItem | undefined): Kind {
   if (!screen) return "exercise";
-  if (screen.hasNextVideoSlot) return "rest";
+  // hasVideoSlot wins when a screen declares both (e.g. ipt warmup)
   if (screen.hasVideoSlot) return "exercise";
+  if (screen.hasNextVideoSlot) return "rest";
   return "countdown";
+}
+
+function findMissingVideoStepIndexes(
+  steps: Step[],
+  opts: { isHtmlSkin: boolean; screens: SkinScreenListItem[] },
+): number[] {
+  const screensById = new Map(opts.screens.map((screen) => [screen.id, screen]));
+  const indexes: number[] = [];
+  steps.forEach((step, index) => {
+    const needsVideo = opts.isHtmlSkin
+      ? !!(step.screenId && screensById.get(step.screenId)?.hasVideoSlot)
+      : step.kind === "exercise";
+    if (needsVideo && !step.videoId?.trim()) indexes.push(index);
+  });
+  return indexes;
+}
+
+function missingVideoStepsMessage(steps: Step[], indexes: number[]): string {
+  const detail = indexes
+    .map((index) => `${index + 1}단계 "${steps[index]?.label?.trim() || `${index + 1}단계`}"`)
+    .join(", ");
+  return `영상이 필요한 단계에 영상이 없어요: ${detail}`;
 }
 
 function toSharedProgram(input: {
@@ -244,7 +268,7 @@ function toSharedProgram(input: {
   };
 }
 
-export function BuilderScreen({ initialId }: { initialId?: string }) {
+export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; onDeleted?: () => void }) {
   const [programId, setProgramId] = useState(initialId ?? "");
   const [name, setName] = useState("");
   const [skinOptions, setSkinOptions] = useState<SharedProgram["skin"]["options"]>({
@@ -274,6 +298,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const [empty, setEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [skinFrameOk, setSkinFrameOk] = useState<boolean | null>(null);
   const [videoForm, setVideoForm] = useState({ name: "", url: "", durationSec: 10, thumbnailUrl: "" });
   const dragFrom = useRef<number | null>(null);
@@ -282,6 +307,12 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const previewRef = useRef<HTMLIFrameElement | null>(null);
   const htmlPreviewWrapRef = useRef<HTMLDivElement | null>(null);
   const htmlPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [stepRemainMs, setStepRemainMs] = useState<number | null>(null);
+  const previewPlayingRef = useRef(false);
+  const stepRemainRef = useRef<number | null>(null);
+  const selectedRef = useRef(0);
+  const stepsRef = useRef<Step[]>([]);
 
   function remember(program: Program) {
     setProgramId(program.id);
@@ -304,8 +335,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [list, videoList, audioList, packList, skinList] = await Promise.all([
-        api<{ items: Program[] }>("/admin/v1/programs"),
+      const [videoList, audioList, packList, skinList] = await Promise.all([
         api<{ items: VideoItem[] }>("/admin/v1/videos"),
         api<{ items: AudioItem[] }>("/admin/v1/audio"),
         api<{ items: VoicePackItem[] }>("/admin/v1/voice-packs"),
@@ -315,13 +345,13 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       setAudioItems(audioList.items);
       setVoicePacks(packList.items);
       setSkins(skinList.items);
-      const id = initialId || list.items.find((item) => item.name.includes("머슬핏"))?.id || list.items[0]?.id;
-      if (!id) {
+      // Never silently open another program when there is no initialId.
+      if (!initialId) {
         setEmpty(true);
         setLoading(false);
         return;
       }
-      remember(await api<Program>(`/admin/v1/programs/${id}`));
+      remember(await api<Program>(`/admin/v1/programs/${initialId}`));
     })().catch((caught) => {
       setLoading(false);
       setError(caught instanceof ApiError ? caught.message : "프로그램을 불러오지 못했어요");
@@ -350,6 +380,39 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       cancelled = true;
     };
   }, [selectedSkin]);
+
+  // HTML 스킨: screenId 누락/다른 스킨 id면 기본 화면으로 채워 autosave 400 방지
+  useEffect(() => {
+    if (!isHtmlSkin || !skinScreens.length) return;
+    const fallback =
+      skinScreens.find((screen) => screen.hasVideoSlot) ??
+      skinScreens.find((screen) => screen.hasNextVideoSlot) ??
+      skinScreens[0];
+    if (!fallback) return;
+    setSteps((current) => {
+      let changed = false;
+      const next = current.map((step) => {
+        const stillValid = step.screenId != null && skinScreens.some((screen) => screen.id === step.screenId);
+        if (stillValid) return step;
+        changed = true;
+        const preferred =
+          step.kind === "rest"
+            ? (skinScreens.find((screen) => screen.hasNextVideoSlot && !screen.hasVideoSlot) ??
+              skinScreens.find((screen) => screen.hasNextVideoSlot) ??
+              fallback)
+            : step.kind === "countdown"
+              ? (skinScreens.find((screen) => screen.titleOnly) ?? fallback)
+              : (skinScreens.find((screen) => screen.hasVideoSlot) ?? fallback);
+        return {
+          ...step,
+          screenId: preferred.id,
+          kind: stepKindFromScreen(preferred),
+          label: step.label || preferred.title,
+        };
+      });
+      return changed ? next : current;
+    });
+  }, [isHtmlSkin, skinScreens]);
 
   function persist(nextSteps: Step[], nextName = name, nextSkin = skinOptions, nextSkinSlug = selectedSkinSlug) {
     if (!programId) return Promise.resolve(undefined);
@@ -409,6 +472,106 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   }, [selected, steps]);
 
   useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+
+  useEffect(() => {
+    stepsRef.current = steps;
+  }, [steps]);
+
+  useEffect(() => {
+    previewPlayingRef.current = previewPlaying;
+  }, [previewPlaying]);
+
+  function stopPreviewPlayback() {
+    previewPlayingRef.current = false;
+    setPreviewPlaying(false);
+    stepRemainRef.current = null;
+    setStepRemainMs(null);
+    previewRef.current?.contentWindow?.postMessage({ type: "mvn:pause" }, "*");
+  }
+
+  function selectPreviewStep(index: number) {
+    const clamped = Math.max(0, Math.min(index, Math.max(0, stepsRef.current.length - 1)));
+    setSelected(clamped);
+    if (previewPlayingRef.current || stepRemainRef.current != null) {
+      const dur = Math.max(0, (stepsRef.current[clamped]?.seconds ?? 0) * 1000);
+      stepRemainRef.current = dur;
+      setStepRemainMs(dur);
+    }
+  }
+
+  function togglePreviewPlayback() {
+    if (previewPlayingRef.current) {
+      previewPlayingRef.current = false;
+      setPreviewPlaying(false);
+      return;
+    }
+    const list = stepsRef.current;
+    if (!list.length) return;
+    if (stepRemainRef.current == null || stepRemainRef.current <= 0) {
+      const dur = Math.max(0, (list[selectedRef.current]?.seconds ?? 0) * 1000);
+      stepRemainRef.current = dur;
+      setStepRemainMs(dur);
+    }
+    previewPlayingRef.current = true;
+    setPreviewPlaying(true);
+  }
+
+  // Builder preview playhead: advance through steps by each step's duration.
+  useEffect(() => {
+    if (!previewPlaying) return;
+    let last = performance.now();
+    const timer = window.setInterval(() => {
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      const list = stepsRef.current;
+      const cur = selectedRef.current;
+      if (!list.length || cur < 0 || cur >= list.length) {
+        stopPreviewPlayback();
+        return;
+      }
+      let left = (stepRemainRef.current ?? list[cur].seconds * 1000) - dt;
+      if (left > 0) {
+        stepRemainRef.current = left;
+        setStepRemainMs(left);
+        return;
+      }
+      if (cur >= list.length - 1) {
+        stepRemainRef.current = 0;
+        setStepRemainMs(0);
+        previewPlayingRef.current = false;
+        setPreviewPlaying(false);
+        return;
+      }
+      const next = cur + 1;
+      const nextDur = Math.max(0, (list[next]?.seconds ?? 0) * 1000);
+      selectedRef.current = next;
+      setSelected(next);
+      stepRemainRef.current = nextDur;
+      setStepRemainMs(nextDur);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [previewPlaying]);
+
+  // Stop playback when program/skin changes or builder unmounts.
+  useEffect(() => {
+    stopPreviewPlayback();
+  }, [selectedSkinSlug, programId]);
+
+  useEffect(() => () => stopPreviewPlayback(), []);
+
+  // Tokens skin iframe: pause/resume to roughly follow builder play state.
+  useEffect(() => {
+    if (isHtmlSkin || stepRemainMs == null) return;
+    previewRef.current?.contentWindow?.postMessage(
+      { type: previewPlaying ? "mvn:resume" : "mvn:pause" },
+      "*",
+    );
+  }, [previewPlaying, stepRemainMs, isHtmlSkin]);
+
+  useEffect(() => {
     let cancelled = false;
     void fetch("/skins/neon-arcade/index.html", { method: "HEAD" })
       .then((response) => {
@@ -449,6 +612,14 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       return next;
     });
     setSelected(to);
+  }
+
+  /** Swap with adjacent step only when both share the same groupKey (incl. both ungrouped). */
+  function moveBy(index: number, delta: -1 | 1) {
+    const to = index + delta;
+    if (to < 0 || to >= steps.length) return;
+    if ((steps[index].groupKey ?? null) !== (steps[to].groupKey ?? null)) return;
+    move(index, to);
   }
 
   function defaultScreenForStep(): SkinScreenListItem | undefined {
@@ -494,12 +665,28 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
           groupRepeat: 3,
         },
         {
-          kind: isHtmlSkin ? stepKindFromScreen(skinScreens.find((s) => s.hasNextVideoSlot) ?? skinScreens.find((s) => s.titleOnly)) : ("rest" as const),
-          label: isHtmlSkin ? (skinScreens.find((s) => s.hasNextVideoSlot)?.title ?? skinScreens.find((s) => s.titleOnly)?.title ?? "휴식") : "휴식",
+          kind: isHtmlSkin
+            ? stepKindFromScreen(
+                skinScreens.find((s) => s.hasNextVideoSlot && !s.hasVideoSlot) ??
+                  skinScreens.find((s) => s.hasNextVideoSlot) ??
+                  skinScreens.find((s) => s.titleOnly),
+              )
+            : ("rest" as const),
+          label: isHtmlSkin
+            ? (skinScreens.find((s) => s.hasNextVideoSlot && !s.hasVideoSlot)?.title ??
+              skinScreens.find((s) => s.hasNextVideoSlot)?.title ??
+              skinScreens.find((s) => s.titleOnly)?.title ??
+              "휴식")
+            : "휴식",
           subtitle: null,
           seconds: 15,
           videoId: null,
-          screenId: isHtmlSkin ? (skinScreens.find((s) => s.hasNextVideoSlot)?.id ?? skinScreens.find((s) => s.titleOnly)?.id ?? null) : null,
+          screenId: isHtmlSkin
+            ? (skinScreens.find((s) => s.hasNextVideoSlot && !s.hasVideoSlot)?.id ??
+              skinScreens.find((s) => s.hasNextVideoSlot)?.id ??
+              skinScreens.find((s) => s.titleOnly)?.id ??
+              null)
+            : null,
           groupKey: key,
           groupLabel: "새 그룹",
           groupRepeat: 3,
@@ -529,28 +716,51 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   }
 
   async function publish() {
-    if (!programId) return;
+    if (!programId || publishing) return;
     setError("");
     setNotice("");
-    const run = saveChain.current.then(async () => {
-      await persist(steps, name, skinOptions);
+
+    const missingIndexes = findMissingVideoStepIndexes(steps, { isHtmlSkin, screens: skinScreens });
+    if (missingIndexes.length) {
+      setSelected(missingIndexes[0]);
+      setError(missingVideoStepsMessage(steps, missingIndexes));
+      return;
+    }
+
+    setPublishing(true);
+    try {
+      // Flush in-flight autosave first; do not nest persist inside saveChain (deadlock).
+      await saveChain.current.catch(() => undefined);
+      await persist(steps, name, skinOptions, selectedSkinSlug);
       const result = await api<Program>(`/admin/v1/programs/${programId}/publish`, { method: "POST" });
       setPublished(result.publishedVersion);
       setStatus(result.status);
+      setNeedsRepublish(result.needsRepublish ?? false);
       setUpdatedAt(result.draftUpdatedAt);
       setSavedAt(new Date(result.draftUpdatedAt).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }));
       snapshot.current = JSON.stringify({ name: result.name, skin: result.skin, steps: fromShared(result) });
-      return result;
-    });
-    saveChain.current = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    try {
-      const result = await run;
       setNotice(`v${result.publishedVersion}을 발행했어요`);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "발행하지 못했어요");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function deleteProgram() {
+    if (!programId) return;
+    const label = name.trim() || "이 프로그램";
+    if (!window.confirm(`"${label}" 프로그램을 삭제할까요?`)) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await api(`/admin/v1/programs/${programId}`, { method: "DELETE" });
+      onDeleted?.();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "프로그램을 삭제하지 못했어요");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -643,11 +853,15 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const exercise = playItems.filter((item) => item.type === "exercise").reduce((sum, item) => sum + item.durationSec, 0);
   const rest = playItems.filter((item) => item.type === "rest").reduce((sum, item) => sum + item.durationSec, 0);
   const selectedPlayIndex = playItems.findIndex((item) => item.stepId === `step-${selected}`);
+  const selectedStepDuration = playItems[selectedPlayIndex]?.durationSec ?? current?.seconds ?? 0;
+  const stepProgressSec =
+    stepRemainMs != null
+      ? Math.max(0, selectedStepDuration - stepRemainMs / 1000)
+      : selectedStepDuration / 2;
   const playElapsed =
     selectedPlayIndex < 0
       ? 0
-      : playItems.slice(0, selectedPlayIndex).reduce((sum, item) => sum + item.durationSec, 0) +
-        (playItems[selectedPlayIndex]?.durationSec ?? 0) / 2;
+      : playItems.slice(0, selectedPlayIndex).reduce((sum, item) => sum + item.durationSec, 0) + stepProgressSec;
   const blocks = useMemo(() => blocksOf(steps), [steps]);
   const groups = useMemo(() => {
     if (!total) return [] as Array<{ left: number; width: number; label: string }>;
@@ -785,6 +999,10 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   }
 
   function renderStepRow(step: Step, index: number) {
+    const sameGroup = (a: number, b: number) =>
+      a >= 0 && b >= 0 && a < steps.length && b < steps.length && (steps[a].groupKey ?? null) === (steps[b].groupKey ?? null);
+    const canUp = sameGroup(index, index - 1);
+    const canDown = sameGroup(index, index + 1);
     return (
       <div
         key={`${step.label}-${index}`}
@@ -801,11 +1019,11 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
           if (dragFrom.current != null) move(dragFrom.current, index);
           dragFrom.current = null;
         }}
-        onClick={() => setSelected(index)}
+        onClick={() => selectPreviewStep(index)}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            setSelected(index);
+            selectPreviewStep(index);
           }
         }}
       >
@@ -830,6 +1048,36 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
           {step.subtitle ? <small>{step.subtitle}</small> : null}
         </div>
         <span className="dur">{clock(step.seconds)}</span>
+        <div className="ord">
+          <button
+            type="button"
+            className="ord-btn"
+            aria-label="위로"
+            title="위로"
+            disabled={!canUp}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              moveBy(index, -1);
+            }}
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            className="ord-btn"
+            aria-label="아래로"
+            title="아래로"
+            disabled={!canDown}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              moveBy(index, 1);
+            }}
+          >
+            ▼
+          </button>
+        </div>
       </div>
     );
   }
@@ -872,9 +1120,18 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
             <Cast className="i" aria-hidden />
             TV로 미리보기
           </button>
-          <button type="button" className="btn btn-accent btn-sm" onClick={() => void publish()}>
+          <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void deleteProgram()}>
+            <Trash2 className="i" aria-hidden />
+            삭제
+          </button>
+          <button
+            type="button"
+            className="btn btn-accent btn-sm"
+            disabled={publishing || busy}
+            onClick={() => void publish()}
+          >
             <Send className="i" aria-hidden />
-            발행하기
+            {publishing ? "발행 중…" : published != null ? "재발행" : "발행하기"}
           </button>
         </div>
       </header>
@@ -1072,23 +1329,29 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                 type="button"
                 className="tbtn"
                 aria-label="이전 단계"
-                onClick={() => setSelected((currentIndex) => Math.max(0, currentIndex - 1))}
+                onClick={() => selectPreviewStep(selected - 1)}
               >
                 <SkipBack className="i" aria-hidden />
               </button>
-              <button type="button" className="tbtn play" aria-label="재생 미리보기">
-                <Play className="i" aria-hidden />
+              <button
+                type="button"
+                className="tbtn play"
+                aria-label={previewPlaying ? "일시정지" : "재생 미리보기"}
+                onClick={() => togglePreviewPlayback()}
+              >
+                {previewPlaying ? <Pause className="i" aria-hidden /> : <Play className="i" aria-hidden />}
               </button>
               <button
                 type="button"
                 className="tbtn"
                 aria-label="다음 단계"
-                onClick={() => setSelected((currentIndex) => Math.min(steps.length - 1, currentIndex + 1))}
+                onClick={() => selectPreviewStep(selected + 1)}
               >
                 <SkipForward className="i" aria-hidden />
               </button>
               <span className="ttime" style={{ textAlign: "right" }}>
                 단계 {steps.length ? selected + 1 : 0}
+                {stepRemainMs != null ? ` · 남음 ${clock(Math.ceil(stepRemainMs / 1000))}` : ""}
                 {current?.groupRepeat ? ` · 1/${current.groupRepeat}세트` : ""}
               </span>
             </div>
@@ -1133,7 +1396,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
                       className={selectedSeg ? "seg-e sel" : item.type === "guide" ? "seg-c" : item.type === "rest" ? "seg-r" : "seg-e"}
                       style={{ flex: Math.max(item.durationSec, 1), cursor: "pointer" }}
                       onClick={() => {
-                        if (Number.isFinite(stepIndex)) setSelected(stepIndex);
+                        if (Number.isFinite(stepIndex)) selectPreviewStep(stepIndex);
                       }}
                     />
                   );
