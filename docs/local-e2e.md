@@ -23,6 +23,11 @@ pnpm dev
 
 # 4. E2E 테스트 (별도 터미널)
 pnpm e2e
+
+# HTML 스킨 (neon-arcade kind=html, seed-html-skin 후)
+# 터미널 A: PORT=3011 pnpm dev:api
+# 터미널 B:
+pnpm e2e:html-skin
 ```
 
 ## 브라우저 확인

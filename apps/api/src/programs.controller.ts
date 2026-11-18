@@ -26,6 +26,12 @@ import {
   freezeHtmlSkinScreens,
   snapshotScreenVersions,
 } from "./html-skin-publish";
+import {
+  draftRepublishContentDiffPaths,
+  pickScreenVersionsForItems,
+  republishSkinTokensDiffPaths,
+  screenVersionsDiffPaths,
+} from "./program-republish";
 import { AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
 
@@ -103,6 +109,7 @@ async function asDraft(
 type PresentedProgram = SharedProgram & {
   totals: { seconds: number; stepCount: number };
   needsRepublish: boolean;
+  republishDiff?: string[];
 };
 
 type SkinPublishMeta = {
@@ -127,30 +134,31 @@ function present(
     items: draft.items,
   };
   const play = expand(program);
-  let needsRepublish = row.publishedVersion != null && publishedSnapshot != null && !deepEqual(draft, publishedSnapshot);
-  if (!needsRepublish && row.publishedVersion != null && publishedSnapshot != null && skinMeta?.tokens) {
-    const pubSkin = publishedSnapshot.skin as { tokens?: Record<string, unknown> } | undefined;
-    const pubTokens = pubSkin?.tokens;
-    if (!deepEqual(skinMeta.tokens, pubTokens)) {
-      needsRepublish = true;
+  const republishDiff: string[] = [];
+  const pubSnap = publishedSnapshot as { items: typeof draft.items; skin: typeof draft.skin } | null | undefined;
+  const canCompare = row.publishedVersion != null && pubSnap != null;
+  if (canCompare) {
+    republishDiff.push(...draftRepublishContentDiffPaths(draft, pubSnap));
+    const pubSkin = pubSnap.skin as {
+      tokens?: Record<string, unknown>;
+      screens?: Record<string, { version?: number }>;
+    };
+    republishDiff.push(
+      ...republishSkinTokensDiffPaths(skinMeta?.kind ?? draft.skin.kind, skinMeta?.tokens, pubSkin?.tokens),
+    );
+    if (skinMeta?.kind === "html") {
+      const pubVersions = snapshotScreenVersions(pubSkin?.screens as never);
+      const currentVersions = pickScreenVersionsForItems(skinMeta.screenVersions ?? {}, draft.items);
+      republishDiff.push(...screenVersionsDiffPaths(currentVersions, pubVersions));
     }
   }
-  if (!needsRepublish && row.publishedVersion != null && publishedSnapshot != null && skinMeta?.kind === "html") {
-    const pubSkin = publishedSnapshot.skin as { screens?: Record<string, { version?: number }> } | undefined;
-    const pubVersions = snapshotScreenVersions(pubSkin?.screens as never);
-    if (!deepEqual(skinMeta.screenVersions ?? {}, pubVersions)) {
-      needsRepublish = true;
-    }
-  }
+  const needsRepublish = canCompare && republishDiff.length > 0;
   return {
     ...program,
     totals: { seconds: playTotalSec(play), stepCount: play.length },
     needsRepublish,
+    ...(needsRepublish ? { republishDiff } : {}),
   };
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 @Controller("admin/v1/programs")

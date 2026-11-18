@@ -83,6 +83,8 @@ async function upsertNeonArcadeHtmlSkin() {
       name: manifest.name,
       tone: manifest.tone,
       kind: "html",
+      isBuiltin: true,
+      isActive: true,
       ...(existing?.tokens && Object.keys(existing.tokens).length > 0 ? { tokens: existing.tokens } : {}),
     },
     create: {

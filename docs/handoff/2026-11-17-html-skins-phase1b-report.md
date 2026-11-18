@@ -60,8 +60,32 @@
 
 ### 남은 점 (B)
 
-- DB·seed 후 실제 `kind=html` neon-arcade 스킨으로 관리자 빌더 E2E 확인 필요.
 - html 스킨 TV 미리보기는 여전히 tokens iframe 폴백(1-5 범위 외).
+
+## E2E: HTML 스킨 (2026-11-18)
+
+| 항목 | 결과 |
+|------|------|
+| `node scripts/seed-html-skin.mjs` | **실행** (`neon-arcade` `isBuiltin`·화면 10 upsert) |
+| `PORT=3011` API + `pnpm e2e:html-skin` | **7단계 통과** (2026-11-18 재확인) |
+
+### 스크립트·수정
+
+- `scripts/e2e-html-skin.mjs` — manifest 10화면 제목·`na-stage`, draft 검증 4건(400), 발행, 플레이어 동결 2화면·`playItems`·`videos`, 관리자 `needsRepublish`·버전 스냅; 실패 시 `republishDiff` 경로 출력
+- `apps/api/src/program-republish.ts` — `draftRepublishContentDiffPaths`, `republishSkinTokensDiffPaths`(`kind=html`은 DB `skin.tokens` 무시), 화면 `version` 맵 키 순서 무시 비교
+- `package.json` — `e2e:html-skin` 추가.
+- `seed-html-skin.mjs` — upsert 시 `neon-arcade` `isBuiltin`/`isActive` 유지(페어링 기본 스킨).
+
+### 버그 (step 7 `needsRepublish`)
+
+- 진단: `republishDiff` → **`skin.tokens`**
+- 원인: `neon-arcade`는 DB에 legacy `tokens` JSON이 남아 있으나 HTML 발행 스냅샷에는 `skin.tokens`가 없음. `present()`가 kind 무관하게 비교해 오탐.
+- 수정: `republishSkinTokensDiffPaths` — `kind=tokens`일 때만 비교.
+
+### 환경 메모
+
+- 영상: `ffmpeg` 없으면 업로드 실패 → 시드된 **ready** 영상 재사용(기본). `E2E_UPLOAD_VIDEO=1`이면 업로드 시도.
+- API는 사용자 `3001` 대신 **`3011`**에서 기동 후 실행.
 
 ## 후속: 미리보기 스크린샷·운동 HUD (2026-11-17)
 
