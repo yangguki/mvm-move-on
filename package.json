@@ -15,6 +15,7 @@
     "infra:down": "docker compose down",
     "e2e": "node scripts/e2e-smoke.mjs",
     "e2e:html-skin": "node scripts/e2e-html-skin.mjs",
+    "seed:ipt-power-bell": "node scripts/seed-ipt-power-bell-program.mjs",
     "postinstall": "pnpm db:generate"
   },
   "pnpm": {

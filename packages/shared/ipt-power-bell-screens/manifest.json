@@ -1,0 +1,103 @@
+{
+  "slug": "ipt-power-bell",
+  "name": "iPT POWER BELL",
+  "tone": "linear-gradient(135deg,#FFE4C8,#7ECEC9)",
+  "screens": [
+    {
+      "slug": "intro",
+      "title": "수업 대기",
+      "htmlFile": "intro.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "slug": "warmup-title",
+      "title": "웜업 타이틀",
+      "htmlFile": "warmup-title.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "slug": "warmup",
+      "title": "웜업",
+      "htmlFile": "warmup.html",
+      "hasVideoSlot": true,
+      "hasNextVideoSlot": true,
+      "titleOnly": false
+    },
+    {
+      "slug": "workout-wait",
+      "title": "운동 대기",
+      "htmlFile": "workout-wait.html",
+      "hasVideoSlot": true,
+      "hasNextVideoSlot": false,
+      "titleOnly": false
+    },
+    {
+      "slug": "preview",
+      "title": "미리보기",
+      "htmlFile": "preview.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": true,
+      "titleOnly": false
+    },
+    {
+      "slug": "exercise",
+      "title": "운동",
+      "htmlFile": "exercise.html",
+      "hasVideoSlot": true,
+      "hasNextVideoSlot": false,
+      "titleOnly": false
+    },
+    {
+      "slug": "rest",
+      "title": "휴식",
+      "htmlFile": "rest.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": true,
+      "titleOnly": false
+    },
+    {
+      "slug": "change",
+      "title": "체인지",
+      "htmlFile": "change.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "slug": "change-preview",
+      "title": "체인지 후 미리보기",
+      "htmlFile": "change-preview.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": true,
+      "titleOnly": false
+    },
+    {
+      "slug": "cooldown-title",
+      "title": "쿨다운 타이틀",
+      "htmlFile": "cooldown-title.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    },
+    {
+      "slug": "cooldown",
+      "title": "쿨다운",
+      "htmlFile": "cooldown.html",
+      "hasVideoSlot": true,
+      "hasNextVideoSlot": true,
+      "titleOnly": false
+    },
+    {
+      "slug": "completed",
+      "title": "완료",
+      "htmlFile": "completed.html",
+      "hasVideoSlot": false,
+      "hasNextVideoSlot": false,
+      "titleOnly": true
+    }
+  ]
+}

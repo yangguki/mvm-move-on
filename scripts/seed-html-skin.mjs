@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 /**
- * HTML 스킨 시드: 샘플 1종 + neon-arcade 화면 10종 (파일 기반)
+ * HTML 스킨 시드: 샘플 1종 + neon-arcade 화면 10종 + ipt-power-bell 화면 12종 (파일 기반)
  */
 import { PrismaClient } from "../packages/db/src/generated/client/index.js";
 import {
   loadNeonArcadeHtmlScreens,
   loadNeonArcadeManifest,
 } from "../packages/shared/neon-arcade-screens/load.mjs";
+import {
+  loadIptPowerBellHtmlScreens,
+  loadIptPowerBellManifest,
+} from "../packages/shared/ipt-power-bell-screens/load.mjs";
 
 const prisma = new PrismaClient();
 
@@ -115,9 +119,54 @@ async function upsertNeonArcadeHtmlSkin() {
   console.log(`neon-arcade HTML 화면 ${screens.length}개 준비됨: ${skin.slug} (${skin.id})`);
 }
 
+async function upsertIptPowerBellHtmlSkin() {
+  const manifest = loadIptPowerBellManifest();
+  const screens = loadIptPowerBellHtmlScreens();
+
+  const existing = await prisma.skin.findUnique({ where: { slug: manifest.slug } });
+
+  const skin = await prisma.skin.upsert({
+    where: { slug: manifest.slug },
+    update: {
+      name: manifest.name,
+      tone: manifest.tone,
+      kind: "html",
+      isBuiltin: true,
+      isActive: true,
+      ...(existing?.tokens && Object.keys(existing.tokens).length > 0 ? { tokens: existing.tokens } : {}),
+    },
+    create: {
+      slug: manifest.slug,
+      name: manifest.name,
+      tone: manifest.tone,
+      kind: "html",
+      tokens: existing?.tokens ?? {},
+      isBuiltin: true,
+      isActive: true,
+    },
+  });
+
+  await prisma.skinScreen.deleteMany({ where: { skinId: skin.id } });
+  await prisma.skinScreen.createMany({
+    data: screens.map((s) => ({
+      skinId: skin.id,
+      title: s.title,
+      html: s.html,
+      css: s.css,
+      hasVideoSlot: s.hasVideoSlot,
+      hasNextVideoSlot: s.hasNextVideoSlot,
+      titleOnly: s.titleOnly,
+      sortOrder: s.sortOrder,
+    })),
+  });
+
+  console.log(`ipt-power-bell HTML 화면 ${screens.length}개 준비됨: ${skin.slug} (${skin.id})`);
+}
+
 async function main() {
   await upsertSampleHtmlSkin();
   await upsertNeonArcadeHtmlSkin();
+  await upsertIptPowerBellHtmlSkin();
   await prisma.$disconnect();
 }
 

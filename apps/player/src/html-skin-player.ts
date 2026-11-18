@@ -182,26 +182,28 @@ export class HtmlSkinPlayer {
 
   private mountVideos(item: PlayItem, screen: SkinScreenSnapshot): void {
     if (!screen.hasVideoSlot || !item.video?.url) return;
-    const main = document.createElement("video");
-    main.src = item.video.url;
-    main.playsInline = true;
-    main.autoplay = true;
-    main.muted = false;
-    main.dataset.slot = "main";
+    const main = this.createSlotVideo(item.video.url, "main");
     this.wrap.appendChild(main);
     this.videoEls.push(main);
     if (screen.hasNextVideoSlot && item.next?.video?.url) {
-      const next = document.createElement("video");
-      next.src = item.next.video.url;
-      next.playsInline = true;
-      next.autoplay = true;
-      next.loop = true;
-      next.muted = true;
-      next.dataset.slot = "next";
+      const next = this.createSlotVideo(item.next.video.url, "next");
       this.wrap.appendChild(next);
       this.videoEls.push(next);
     }
     this.positionVideos();
+  }
+
+  /** HTML 스킨 슬롯 오버레이 — controls 없음, muted autoplay playsinline loop */
+  private createSlotVideo(url: string, slot: "main" | "next"): HTMLVideoElement {
+    const video = document.createElement("video");
+    video.src = url;
+    video.controls = false;
+    video.muted = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.loop = true;
+    video.dataset.slot = slot;
+    return video;
   }
 
   private positionVideos(): void {

@@ -3,12 +3,16 @@ import { describe, it } from "node:test";
 import {
   assertHtmlSkinContentSize,
   buildHtmlSkinSrcdoc,
+  buildHtmlSkinStepPreviewDocument,
   collectScreenIds,
+  fillSkinTokens,
   sanitizeHtmlSkinContent,
   validateHtmlProgramSteps,
   HTML_SKIN_CONTENT_MAX_BYTES,
+  HTML_SKIN_SAMPLE_TOKENS,
 } from "../dist/index.js";
 import { loadNeonArcadeHtmlScreens } from "../neon-arcade-screens/load.mjs";
+import { loadIptPowerBellHtmlScreens } from "../ipt-power-bell-screens/load.mjs";
 
 describe("html-skin sanitize", () => {
   it("removes script tags and on* handlers", () => {
@@ -78,6 +82,100 @@ describe("collectScreenIds", () => {
   });
 });
 
+describe("buildHtmlSkinStepPreviewDocument", () => {
+  const screens = [
+    {
+      id: "title",
+      title: "타이틀",
+      html: `<h1>{{label}}</h1><p>{{program.name}}</p><script>evil()</script>`,
+      css: "h1{color:{{pointColor}}}",
+      hasVideoSlot: false,
+      hasNextVideoSlot: false,
+      titleOnly: true,
+    },
+    {
+      id: "exercise",
+      title: "운동",
+      html: `<div data-mvn-video class="slot"></div><span>{{label}}</span><span>{{remainingSec}}</span>`,
+      css: ".slot{width:100px}",
+      hasVideoSlot: true,
+      hasNextVideoSlot: false,
+      titleOnly: false,
+    },
+    {
+      id: "change",
+      title: "체인지",
+      html: `<h1>{{label}}</h1>`,
+      css: "",
+      hasVideoSlot: false,
+      hasNextVideoSlot: false,
+      titleOnly: true,
+    },
+  ];
+
+  it("picks screen by screenId, fills tokens, embeds video, no script", () => {
+    const doc = buildHtmlSkinStepPreviewDocument({
+      screens,
+      screenId: "exercise",
+      tokens: { ...HTML_SKIN_SAMPLE_TOKENS, label: "덤벨 스윙", remainingSec: 42 },
+      videoUrl: "https://cdn.example/v1.mp4",
+      baseHref: "http://localhost:3000/",
+    });
+    assert.match(doc, /<base href="http:\/\/localhost:3000\/"/);
+    assert.match(doc, /덤벨 스윙/);
+    assert.match(doc, />42</);
+    assert.match(doc, /<video src="https:\/\/cdn\.example\/v1\.mp4"/);
+    assert.doesNotMatch(doc, /<script/i);
+    assert.doesNotMatch(doc, /\{\{/);
+    assert.match(doc, /id="mvn-screen"/);
+  });
+
+  it("injected video has muted autoplay playsinline loop and no controls", () => {
+    const doc = buildHtmlSkinStepPreviewDocument({
+      screens,
+      screenId: "exercise",
+      tokens: { ...HTML_SKIN_SAMPLE_TOKENS, label: "덤벨 스윙", remainingSec: 42 },
+      videoUrl: "https://cdn.example/v1.mp4",
+      baseHref: "/",
+    });
+    const videoMatch = doc.match(/<video\b[^>]*>/i);
+    assert.ok(videoMatch, "video tag expected");
+    const tag = videoMatch[0];
+    assert.match(tag, /\bmuted\b/i);
+    assert.match(tag, /\bautoplay\b/i);
+    assert.match(tag, /\bplaysinline\b/i);
+    assert.match(tag, /\bloop\b/i);
+    assert.doesNotMatch(tag, /\bcontrols\b/i);
+  });
+
+  it("uses requested title screen when screenId is title", () => {
+    const doc = buildHtmlSkinStepPreviewDocument({
+      screens,
+      screenId: "title",
+      tokens: { label: "WARM UP", "program.name": "POWER BELL", pointColor: "#0ff" },
+      baseHref: "/",
+    });
+    assert.match(doc, /WARM UP/);
+    assert.match(doc, /POWER BELL/);
+    assert.match(doc, /color:#0ff/);
+    assert.doesNotMatch(doc, /data-mvn-video/);
+    assert.doesNotMatch(doc, /<script/i);
+  });
+
+  it("falls back to video screen when screenId missing", () => {
+    const doc = buildHtmlSkinStepPreviewDocument({
+      screens,
+      screenId: undefined,
+      tokens: { label: "fallback-label" },
+      videoUrl: "/skins/x/a.mp4",
+      baseHref: "/",
+    });
+    assert.match(doc, /fallback-label/);
+    assert.match(doc, /data-mvn-video/);
+    assert.match(doc, /src="\/skins\/x\/a\.mp4"/);
+  });
+});
+
 describe("neon-arcade html screens", () => {
   const screens = loadNeonArcadeHtmlScreens();
 
@@ -107,4 +205,74 @@ describe("neon-arcade html screens", () => {
       assert(html.includes("na-stage") || html.includes("na-"));
     });
   }
+});
+
+describe("ipt-power-bell html screens", () => {
+  const screens = loadIptPowerBellHtmlScreens();
+
+  it("loads 12 iPT POWER BELL screens", () => {
+    assert.equal(screens.length, 12);
+    assert.deepEqual(
+      screens.map((s) => s.slug),
+      [
+        "intro",
+        "warmup-title",
+        "warmup",
+        "workout-wait",
+        "preview",
+        "exercise",
+        "rest",
+        "change",
+        "change-preview",
+        "cooldown-title",
+        "cooldown",
+        "completed",
+      ],
+    );
+    assert.deepEqual(
+      screens.map((s) => s.title),
+      [
+        "수업 대기",
+        "웜업 타이틀",
+        "웜업",
+        "운동 대기",
+        "미리보기",
+        "운동",
+        "휴식",
+        "체인지",
+        "체인지 후 미리보기",
+        "쿨다운 타이틀",
+        "쿨다운",
+        "완료",
+      ],
+    );
+  });
+
+  for (const screen of screens) {
+    it(`sanitizes, no script, fits 200KB: ${screen.slug}`, () => {
+      const { html, css } = sanitizeHtmlSkinContent(screen.html, screen.css);
+      assertHtmlSkinContentSize(html, css, HTML_SKIN_CONTENT_MAX_BYTES);
+      assert(!/<script/i.test(html));
+      assert(!/\bon\w+\s*=/i.test(html));
+      assert(html.includes("ipb-stage"));
+    });
+
+    it(`sample tokens leave no "{{": ${screen.slug}`, () => {
+      const filledHtml = fillSkinTokens(screen.html, HTML_SKIN_SAMPLE_TOKENS);
+      const filledCss = fillSkinTokens(screen.css, HTML_SKIN_SAMPLE_TOKENS);
+      assert(!filledHtml.includes("{{"), `html still has tokens: ${screen.slug}`);
+      assert(!filledCss.includes("{{"), `css still has tokens: ${screen.slug}`);
+    });
+  }
+
+  it("slot flags match mockup roles", () => {
+    const bySlug = Object.fromEntries(screens.map((s) => [s.slug, s]));
+    assert.equal(bySlug.warmup.hasVideoSlot, true);
+    assert.equal(bySlug.warmup.hasNextVideoSlot, true);
+    assert.equal(bySlug.exercise.hasVideoSlot, true);
+    assert.equal(bySlug.rest.hasNextVideoSlot, true);
+    assert.equal(bySlug.preview.hasNextVideoSlot, true);
+    assert.equal(bySlug.change.titleOnly, true);
+    assert.equal(bySlug.intro.titleOnly, true);
+  });
 });

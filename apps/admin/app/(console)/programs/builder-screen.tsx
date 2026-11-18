@@ -23,7 +23,15 @@ import {
   Trash2,
   Tv,
 } from "lucide-react";
-import { expand, playTotalSec, type Program as SharedProgram, type ProgramItem, type Step as SharedStep } from "@mvn/shared";
+import {
+  buildHtmlSkinStepPreviewDocument,
+  expand,
+  playTotalSec,
+  type HtmlSkinTokenMap,
+  type Program as SharedProgram,
+  type ProgramItem,
+  type Step as SharedStep,
+} from "@mvn/shared";
 import { ApiError, api } from "@/lib/api";
 
 type Kind = "countdown" | "exercise" | "rest";
@@ -48,6 +56,8 @@ type SkinItem = { id: string; slug: string; name: string; kind?: string; tokens:
 type SkinScreenListItem = {
   id: string;
   title: string;
+  html: string;
+  css: string;
   hasVideoSlot: boolean;
   hasNextVideoSlot: boolean;
   titleOnly: boolean;
@@ -270,6 +280,8 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const snapshot = useRef("");
   const saveChain = useRef(Promise.resolve<void>(undefined));
   const previewRef = useRef<HTMLIFrameElement | null>(null);
+  const htmlPreviewWrapRef = useRef<HTMLDivElement | null>(null);
+  const htmlPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   function remember(program: Program) {
     setProgramId(program.id);
@@ -675,7 +687,7 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
   const showRepublishBadge = needsRepublish || (published != null && status === "draft");
 
   useEffect(() => {
-    if (!skinFrameOk || !previewRef.current?.contentWindow) return;
+    if (isHtmlSkin || !skinFrameOk || !previewRef.current?.contentWindow) return;
     previewRef.current.contentWindow.postMessage(
       {
         type: "mvn:program",
@@ -683,7 +695,74 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
       },
       "*",
     );
-  }, [sharedProgram, playItems, skinFrameOk, videoMap]);
+  }, [sharedProgram, playItems, skinFrameOk, videoMap, isHtmlSkin]);
+
+  const htmlPreview = useMemo(() => {
+    if (!isHtmlSkin || !current) return null;
+    let nextLabel = "";
+    let nextVideoUrl: string | null = null;
+    let afterRest = false;
+    for (let i = selected + 1; i < steps.length; i += 1) {
+      const s = steps[i];
+      if (s.kind === "rest") {
+        afterRest = true;
+        continue;
+      }
+      if (s.kind === "exercise") {
+        nextLabel = s.label;
+        nextVideoUrl = s.videoId ? videoMap[s.videoId]?.url ?? null : null;
+        break;
+      }
+    }
+    const tokens: HtmlSkinTokenMap = {
+      label: current.label,
+      remainingSec: current.seconds,
+      totalSec: current.seconds,
+      "next.label": nextLabel,
+      "next.afterRest": afterRest,
+      round: 1,
+      roundTotal: 1,
+      stepIndex: selected + 1,
+      stepTotal: steps.length,
+      set: 1,
+      setTotal: 1,
+      "program.name": name,
+      logoUrl: String(skinOptions.logoUrl ?? ""),
+      pointColor: skinOptions.pointColor ?? "#C8F31D",
+    };
+    const videoUrl = current.videoId ? videoMap[current.videoId]?.url ?? null : null;
+    const baseHref = typeof window !== "undefined" ? `${window.location.origin}/` : "/";
+    const srcdoc = buildHtmlSkinStepPreviewDocument({
+      screens: skinScreens,
+      screenId: current.screenId ?? undefined,
+      tokens,
+      videoUrl,
+      nextVideoUrl,
+      baseHref,
+    });
+    const key = `${selected}:${current.screenId ?? ""}:${videoUrl ?? ""}:${nextVideoUrl ?? ""}`;
+    return { srcdoc, key };
+  }, [isHtmlSkin, current, selected, steps, videoMap, name, skinOptions, skinScreens]);
+
+  useEffect(() => {
+    if (!isHtmlSkin || !htmlPreview) return;
+    const wrap = htmlPreviewWrapRef.current;
+    const iframe = htmlPreviewIframeRef.current;
+    if (!wrap || !iframe) return;
+
+    const relayout = () => {
+      const width = wrap.clientWidth;
+      if (!width) return;
+      const scale = width / 1920;
+      iframe.style.transform = `scale(${scale})`;
+      wrap.style.height = `${1080 * scale}px`;
+    };
+
+    relayout();
+    const observer = new ResizeObserver(relayout);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, [isHtmlSkin, htmlPreview]);
 
   if (loading) {
     return <p className="subtle" style={{ padding: 24 }}>프로그램을 불러오는 중이에요</p>;
@@ -931,7 +1010,38 @@ export function BuilderScreen({ initialId }: { initialId?: string }) {
           </div>
           <div className="tv-wrap" style={{ alignItems: "center" }}>
             <div className="tv">
-              {skinFrameOk ? (
+              {isHtmlSkin && htmlPreview ? (
+                <div
+                  ref={htmlPreviewWrapRef}
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    aspectRatio: "16 / 9",
+                    overflow: "hidden",
+                    borderRadius: 5,
+                    background: "#000",
+                  }}
+                >
+                  <iframe
+                    key={htmlPreview.key}
+                    ref={htmlPreviewIframeRef}
+                    title="HTML 스킨 미리보기"
+                    sandbox=""
+                    srcDoc={htmlPreview.srcdoc}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      width: 1920,
+                      height: 1080,
+                      border: 0,
+                      background: "#000",
+                      transformOrigin: "top left",
+                      display: "block",
+                    }}
+                  />
+                </div>
+              ) : skinFrameOk ? (
                 <iframe
                   ref={previewRef}
                   title="네온 아케이드 미리보기"
