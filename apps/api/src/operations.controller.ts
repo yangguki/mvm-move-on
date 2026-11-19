@@ -15,6 +15,7 @@ import { randomInt } from "crypto";
 import { assertHq, AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
 import type { AccessToken } from "./token.service";
+import { storeProgramAssignBlockedMessage } from "./store-program-assign";
 
 function isUnique(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && (error as { code: string }).code === "P2002";
@@ -64,7 +65,8 @@ export class OperationsController {
       } else if (typeof body.programId === "string") {
         const program = await this.prisma.program.findUnique({ where: { id: body.programId } });
         if (!program) throw new NotFoundException("프로그램을 찾을 수 없어요");
-        if (program.status !== "published") throw new BadRequestException("게시된 프로그램만 지정할 수 있어요");
+        const blocked = storeProgramAssignBlockedMessage(program.publishedVersion);
+        if (blocked) throw new BadRequestException(blocked);
         data.programId = body.programId;
       }
     }

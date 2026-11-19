@@ -6,6 +6,10 @@ import {
   buildHtmlSkinStepPreviewDocument,
   collectScreenIds,
   fillSkinTokens,
+  htmlSkinLiveTokensHasMarkers,
+  markHtmlSkinLiveTokens,
+  parseHtmlSkinStepText,
+  refreshHtmlSkinLiveTokens,
   sanitizeHtmlSkinContent,
   validateHtmlProgramSteps,
   HTML_SKIN_CONTENT_MAX_BYTES,
@@ -13,6 +17,25 @@ import {
 } from "../dist/index.js";
 import { loadNeonArcadeHtmlScreens } from "../neon-arcade-screens/load.mjs";
 import { loadIptPowerBellHtmlScreens } from "../ipt-power-bell-screens/load.mjs";
+
+describe("html-skin live tokens", () => {
+  it("marks then refreshes remainingSec without placeholders left", () => {
+    const raw = `<span class="n">{{remainingSec}}</span> / {{totalSec}}`;
+    const marked = markHtmlSkinLiveTokens(raw, { remainingSec: 10, totalSec: 45 });
+    assert(htmlSkinLiveTokensHasMarkers(marked));
+    assert.match(marked, /data-mvn-token="remainingSec">10</);
+    const updated = refreshHtmlSkinLiveTokens(marked, { remainingSec: 7, totalSec: 45 });
+    assert.match(updated, /data-mvn-token="remainingSec">7</);
+    assert.doesNotMatch(updated, /\{\{/);
+  });
+});
+
+describe("parseHtmlSkinStepText", () => {
+  it("parses set= and defaults round", () => {
+    assert.deepEqual(parseHtmlSkinStepText("set=2/3"), { set: 2, setTotal: 3, round: 1, roundTotal: 1 });
+    assert.deepEqual(parseHtmlSkinStepText("round=2/4 set=1/3"), { set: 1, setTotal: 3, round: 2, roundTotal: 4 });
+  });
+});
 
 describe("html-skin sanitize", () => {
   it("removes script tags and on* handlers", () => {

@@ -233,6 +233,10 @@ function togglePause() {
   if (currentScreen !== "play") return;
   isPaused = !isPaused;
   pauseOverlay.classList.toggle("show", isPaused);
+  if (htmlSkinPlayer) {
+    htmlSkinPlayer.setPaused(isPaused);
+    return;
+  }
   skinIframe?.contentWindow?.postMessage({ type: isPaused ? "mvn:pause" : "mvn:resume" }, "*");
 }
 

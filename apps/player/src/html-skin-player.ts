@@ -1,5 +1,6 @@
 import {
   buildHtmlSkinSrcdoc,
+  parseHtmlSkinStepText,
   resolveStepScreen,
   type HtmlSkinScreensMap,
   type PlayItem,
@@ -12,6 +13,8 @@ type HtmlSkinProgram = PublishedSnapshot & {
   publishedVersion: number;
   publishedAt: string;
 };
+
+type SlotRect = { left: number; top: number; width: number; height: number };
 
 const FALLBACK_HTML = `
 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#111;color:#fff;font-family:system-ui,sans-serif">
@@ -36,12 +39,25 @@ export class HtmlSkinPlayer {
   private program: HtmlSkinProgram | null = null;
   private callbacks: HtmlSkinPlayerCallbacks;
   private scale = 1;
+  private stageOffsetX = 0;
+  private stageOffsetY = 0;
+  private slotRects: { main?: SlotRect; next?: SlotRect } = {};
+  private resizeObserver: ResizeObserver | null = null;
+  private relayoutRaf: number | null = null;
+  private paused = false;
+  private tickLeft = 0;
+  private tickItem: PlayItem | null = null;
+  private tickPlayIndex = 0;
+  private currentScreen: SkinScreenSnapshot | null = null;
+  private currentItem: PlayItem | null = null;
 
   constructor(wrap: HTMLElement, callbacks: HtmlSkinPlayerCallbacks) {
     this.wrap = wrap;
     this.callbacks = callbacks;
     window.addEventListener("message", this.onMessage);
     window.addEventListener("resize", this.relayout);
+    this.resizeObserver = new ResizeObserver(() => this.relayout());
+    this.resizeObserver.observe(wrap);
   }
 
   destroy(): void {
@@ -49,19 +65,41 @@ export class HtmlSkinPlayer {
     this.clearVideos();
     if (this.iframe) this.iframe.remove();
     this.iframe = null;
+    if (this.relayoutRaf != null) {
+      cancelAnimationFrame(this.relayoutRaf);
+      this.relayoutRaf = null;
+    }
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     window.removeEventListener("message", this.onMessage);
     window.removeEventListener("resize", this.relayout);
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (paused) {
+      this.stopTimer();
+    } else {
+      this.startTickTimer();
+    }
+    this.videoEls.forEach((video) => {
+      if (paused) video.pause();
+      else void video.play();
+    });
   }
 
   start(program: HtmlSkinProgram): void {
     this.program = program;
     this.index = 0;
+    this.paused = false;
     this.wrap.innerHTML = "";
     this.wrap.style.position = "relative";
     this.wrap.style.width = "100%";
-    this.wrap.style.aspectRatio = "16 / 9";
+    this.wrap.style.height = "100%";
     this.wrap.style.overflow = "hidden";
     this.iframe = document.createElement("iframe");
+    this.iframe.className = "mvn-html-skin-iframe";
     this.iframe.setAttribute("sandbox", "allow-scripts");
     this.iframe.style.position = "absolute";
     this.iframe.style.left = "0";
@@ -71,16 +109,33 @@ export class HtmlSkinPlayer {
     this.iframe.style.border = "0";
     this.iframe.style.background = "transparent";
     this.iframe.style.transformOrigin = "top left";
+    this.iframe.style.zIndex = "0";
     this.wrap.appendChild(this.iframe);
     this.relayout();
     this.showStep(0);
   }
 
   private relayout = (): void => {
-    if (!this.iframe || !this.wrap.clientWidth) return;
-    this.scale = this.wrap.clientWidth / 1920;
+    if (!this.iframe) return;
+    if (!this.wrap.clientWidth || !this.wrap.clientHeight) {
+      if (this.relayoutRaf == null) {
+        this.relayoutRaf = requestAnimationFrame(() => {
+          this.relayoutRaf = null;
+          this.relayout();
+        });
+      }
+      return;
+    }
+    const scaleX = this.wrap.clientWidth / 1920;
+    const scaleY = this.wrap.clientHeight / 1080;
+    this.scale = Math.min(scaleX, scaleY);
+    const stageW = 1920 * this.scale;
+    const stageH = 1080 * this.scale;
+    this.stageOffsetX = (this.wrap.clientWidth - stageW) / 2;
+    this.stageOffsetY = (this.wrap.clientHeight - stageH) / 2;
+    this.iframe.style.left = `${this.stageOffsetX}px`;
+    this.iframe.style.top = `${this.stageOffsetY}px`;
     this.iframe.style.transform = `scale(${this.scale})`;
-    this.wrap.style.height = `${1080 * this.scale}px`;
     this.positionVideos();
   };
 
@@ -94,9 +149,18 @@ export class HtmlSkinPlayer {
   }
 
   private onMessage = (ev: MessageEvent): void => {
-    if (ev.data?.type === "mvn:html-skin-slot" && this.iframe) {
-      this.positionVideos();
+    if (ev.data?.type !== "mvn:html-skin-slot" || !this.iframe) return;
+    const slot = ev.data.slot === "next" ? "next" : "main";
+    const rect = ev.data.rect;
+    if (rect && typeof rect.left === "number") {
+      this.slotRects[slot] = {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
     }
+    this.positionVideos();
   };
 
   private stopTimer(): void {
@@ -109,11 +173,31 @@ export class HtmlSkinPlayer {
   private clearVideos(): void {
     this.videoEls.forEach((v) => v.remove());
     this.videoEls = [];
+    this.slotRects = {};
+  }
+
+  private postTokens(tokens: Record<string, string | number | boolean>): void {
+    this.iframe?.contentWindow?.postMessage({ type: "mvn:html-skin-tokens", tokens }, "*");
+  }
+
+  private startTickTimer(): void {
+    if (!this.iframe || !this.tickItem || this.paused) return;
+    this.stopTimer();
+    this.timer = window.setInterval(() => {
+      this.tickLeft -= 1;
+      if (this.tickLeft <= 0) {
+        this.stopTimer();
+        this.showStep(this.tickPlayIndex + 1);
+        return;
+      }
+      const t = this.buildTokens(this.tickItem!, this.tickLeft);
+      this.postTokens(t);
+    }, 1000);
   }
 
   private showStep(playIndex: number): void {
     if (!this.program || !this.iframe) return;
-  const items = this.program.playItems;
+    const items = this.program.playItems;
     if (playIndex >= items.length) {
       this.callbacks.onDone();
       return;
@@ -122,7 +206,8 @@ export class HtmlSkinPlayer {
     this.stopTimer();
     this.clearVideos();
     const item = items[playIndex];
-    const screen = resolveStepScreen(item.screenId, this.screensMap(), this.orderedScreens()) ?? {
+    const screen =
+      resolveStepScreen(item.screenId, this.screensMap(), this.orderedScreens()) ?? {
       id: "fallback",
       title: "fallback",
       html: FALLBACK_HTML,
@@ -132,6 +217,8 @@ export class HtmlSkinPlayer {
       titleOnly: false,
       version: 1,
     };
+    this.currentScreen = screen;
+    this.currentItem = item;
     const origins = {
       imgSrc: location.origin,
       mediaSrc: location.origin,
@@ -143,37 +230,33 @@ export class HtmlSkinPlayer {
       this.iframe.srcdoc = buildHtmlSkinSrcdoc(FALLBACK_HTML, FALLBACK_CSS, origins);
     }
     const remaining = item.durationSec;
+    this.tickItem = item;
+    this.tickPlayIndex = playIndex;
+    this.tickLeft = remaining;
     const tokens = this.buildTokens(item, remaining);
     this.iframe.onload = () => {
-      this.iframe?.contentWindow?.postMessage({ type: "mvn:html-skin-tokens", tokens }, "*");
+      this.postTokens(tokens);
       this.mountVideos(item, screen);
-      let left = remaining;
-      this.timer = window.setInterval(() => {
-        left -= 1;
-        if (left <= 0) {
-          this.stopTimer();
-          this.showStep(playIndex + 1);
-          return;
-        }
-        const t = this.buildTokens(item, left);
-        this.iframe?.contentWindow?.postMessage({ type: "mvn:html-skin-tokens", tokens: t }, "*");
-      }, 1000);
+      if (!this.paused) this.startTickTimer();
     };
   }
 
   private buildTokens(item: PlayItem, remainingSec: number): Record<string, string | number | boolean> {
     const prog = this.program!;
     const next = item.next;
+    const meta = parseHtmlSkinStepText(item.text);
     return {
       label: item.label,
       remainingSec,
       totalSec: item.durationSec,
       "next.label": next?.label ?? "",
       "next.afterRest": next?.afterRest ?? false,
-      round: 1,
-      roundTotal: 1,
+      round: meta.round,
+      roundTotal: meta.roundTotal,
       stepIndex: item.index + 1,
       stepTotal: prog.playItems.length,
+      set: meta.set,
+      setTotal: meta.setTotal,
       "program.name": prog.name,
       logoUrl: String(prog.skin.options.logoUrl ?? ""),
       pointColor: prog.skin.options.pointColor ?? "#C8F31D",
@@ -181,10 +264,11 @@ export class HtmlSkinPlayer {
   }
 
   private mountVideos(item: PlayItem, screen: SkinScreenSnapshot): void {
-    if (!screen.hasVideoSlot || !item.video?.url) return;
-    const main = this.createSlotVideo(item.video.url, "main");
-    this.wrap.appendChild(main);
-    this.videoEls.push(main);
+    if (screen.hasVideoSlot && item.video?.url) {
+      const main = this.createSlotVideo(item.video.url, "main");
+      this.wrap.appendChild(main);
+      this.videoEls.push(main);
+    }
     if (screen.hasNextVideoSlot && item.next?.video?.url) {
       const next = this.createSlotVideo(item.next.video.url, "next");
       this.wrap.appendChild(next);
@@ -203,40 +287,55 @@ export class HtmlSkinPlayer {
     video.playsInline = true;
     video.loop = true;
     video.dataset.slot = slot;
+    video.style.display = "none";
+    video.style.position = "absolute";
+    video.style.pointerEvents = "none";
+    video.style.zIndex = "2";
+    video.addEventListener(
+      "loadeddata",
+      () => {
+        void video.play().catch(() => {});
+      },
+      { once: true },
+    );
+    void video.play().catch(() => {});
     return video;
   }
 
   private positionVideos(): void {
     if (!this.iframe) return;
     const s = this.scale;
-    const slots = this.querySlotRects();
+    const slots = this.slotRects;
+    const ox = this.stageOffsetX;
+    const oy = this.stageOffsetY;
+    const screen = this.currentScreen;
+    const item = this.currentItem;
     this.videoEls.forEach((video) => {
-      const slot = video.dataset.slot === "next" ? slots.next : slots.main;
-      if (!slot) {
+      const isNext = video.dataset.slot === "next";
+      if (!screen) {
+        video.style.display = "none";
+        return;
+      }
+      if (isNext) {
+        if (!screen.hasNextVideoSlot || !item?.next?.video?.url) {
+          video.style.display = "none";
+          return;
+        }
+      } else if (!screen.hasVideoSlot || !item?.video?.url) {
+        video.style.display = "none";
+        return;
+      }
+      const slot = isNext ? slots.next : slots.main;
+      if (!slot || slot.width <= 0 || slot.height <= 0) {
         video.style.display = "none";
         return;
       }
       video.style.display = "block";
-      video.style.position = "absolute";
-      video.style.left = `${slot.left * s}px`;
-      video.style.top = `${slot.top * s}px`;
+      video.style.left = `${ox + slot.left * s}px`;
+      video.style.top = `${oy + slot.top * s}px`;
       video.style.width = `${slot.width * s}px`;
       video.style.height = `${slot.height * s}px`;
       video.style.objectFit = "cover";
-      video.style.zIndex = "1";
-      video.style.pointerEvents = "none";
     });
-    if (this.iframe) this.iframe.style.zIndex = "2";
-  }
-
-  private querySlotRects(): { main?: DOMRect; next?: DOMRect } {
-    const doc = this.iframe?.contentDocument;
-    if (!doc) return {};
-    const mainEl = doc.querySelector("[data-mvn-video]");
-    const nextEl = doc.querySelector("[data-mvn-next-video]");
-    return {
-      main: mainEl?.getBoundingClientRect(),
-      next: nextEl?.getBoundingClientRect(),
-    };
   }
 }

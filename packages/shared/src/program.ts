@@ -154,6 +154,7 @@ export type PlayItem = {
   video?: Video;
   screenId?: string;
   label: string;
+  text?: string;
   next?: PlayNext;
 };
 
@@ -238,6 +239,7 @@ export function expand(program: Program, videos: Video[] | VideoMap = []): PlayI
       video: step.video,
       screenId: step.screenId,
       label: stepLabel(step, videoMap),
+      text: step.text,
       next: nextPayload(step, found),
     };
   });
