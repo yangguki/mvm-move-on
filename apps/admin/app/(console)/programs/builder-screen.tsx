@@ -27,11 +27,13 @@ import {
 } from "lucide-react";
 import {
   buildHtmlSkinStepPreviewDocument,
+  builderDraftSnapshotKey,
   clampRepeatCount,
   clampStepDurationSec,
   computeVideoStepDurationSec,
   expand,
   inferVideoStepRepeatCount,
+  normalizeBuilderDirtySteps,
   playTotalSec,
   resolveDefaultVideoStepRepeatCount,
   resolveVideoStepDurationSec,
@@ -144,7 +146,7 @@ function draftSnapshotKey(
   skinOpts: SharedProgram["skin"]["options"],
   stepList: Step[],
 ) {
-  return JSON.stringify({ name, skin: { id: skinSlug, options: skinOpts }, steps: stepList });
+  return builderDraftSnapshotKey(name, skinSlug, skinOpts, normalizeBuilderDirtySteps(stepList));
 }
 
 function blocksOf(steps: Step[]): Block[] {
@@ -542,6 +544,15 @@ export function BuilderScreen({
     return window.confirm("저장하지 않은 변경이 있습니다. 나가시겠습니까?");
   }
 
+  function syncSavedDraftBaseline(saved: Program) {
+    const syncedSteps = fromShared(saved);
+    setName(saved.name);
+    setSkinOptions(saved.skin.options);
+    setSelectedSkinSlug(saved.skin.id || selectedSkinSlug);
+    setSteps(syncedSteps);
+    snapshot.current = draftSnapshotKey(saved.name, saved.skin.id, saved.skin.options, syncedSteps);
+  }
+
   async function persist(
     nextSteps: Step[],
     nextName = name,
@@ -579,7 +590,7 @@ export function BuilderScreen({
       setNeedsRepublish(saved.needsRepublish ?? false);
       setUpdatedAt(saved.draftUpdatedAt);
       setSavedAt(new Date(saved.draftUpdatedAt).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }));
-      snapshot.current = draftSnapshotKey(saved.name, saved.skin.id, saved.skin.options, fromShared(saved));
+      syncSavedDraftBaseline(saved);
       setError("");
       return saved;
     } catch (caught) {
@@ -959,7 +970,7 @@ export function BuilderScreen({
       setNeedsRepublish(result.needsRepublish ?? false);
       setUpdatedAt(result.draftUpdatedAt);
       setSavedAt(new Date(result.draftUpdatedAt).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }));
-      snapshot.current = draftSnapshotKey(result.name, result.skin.id, result.skin.options, fromShared(result));
+      syncSavedDraftBaseline(result);
       setNotice(`v${result.publishedVersion}을 발행했어요`);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "발행하지 못했어요");

@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { randomInt } from "crypto";
-import { expand, type PublishedSnapshot } from "@mvn/shared";
+import { presentPlayerProgramSnapshot, type PublishedSnapshot } from "@mvn/shared";
 import { PrismaService } from "./prisma.service";
 import { DeviceAuthGuard } from "./device-auth.guard";
 import { DeviceTokenService } from "./device-token.service";
@@ -96,13 +96,9 @@ export class PlayerController {
     });
     if (!version) throw new NotFoundException("발행 스냅샷을 찾을 수 없어요");
     const snapshot = version.snapshot as PublishedSnapshot;
-    const videos = snapshot.videos ?? {};
-    return {
-      ...snapshot,
-      videos,
-      playItems: expand(snapshot, videos),
+    return presentPlayerProgramSnapshot(snapshot, {
       publishedVersion: version.version,
       publishedAt: version.publishedAt.toISOString(),
-    };
+    });
   }
 }

@@ -14,5 +14,5 @@ export function playerApiPrefix(): string {
   return isCloudDataMode() ? "/api/player/v1" : "/player/v1";
 }
 
-/** Published-program poll interval while playing (cloud: 60s). */
+/** Published-program version poll interval in cloud mode (60s, all screens). */
 export const PROGRAM_PUBLISH_CHECK_MS = isCloudDataMode() ? 60_000 : 0;

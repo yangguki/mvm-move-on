@@ -277,10 +277,18 @@ export class HtmlSkinPlayer {
     this.positionVideos();
   }
 
+  private resolveMediaUrl(url: string): string {
+    const trimmed = url.trim();
+    if (!trimmed) return trimmed;
+    if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed;
+    const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+    return new URL(path, window.location.origin).href;
+  }
+
   /** HTML 스킨 슬롯 오버레이 — controls 없음, muted autoplay playsinline loop */
   private createSlotVideo(url: string, slot: "main" | "next"): HTMLVideoElement {
     const video = document.createElement("video");
-    video.src = url;
+    video.src = this.resolveMediaUrl(url);
     video.controls = false;
     video.muted = true;
     video.autoplay = true;

@@ -1,4 +1,4 @@
-import { expand, type PublishedSnapshot } from "@mvn/shared";
+import { presentPlayerProgramSnapshot, type PublishedSnapshot } from "@mvn/shared";
 import { readDeviceTokenHeader, signDeviceToken, verifyDeviceToken } from "../auth/device-token";
 import { first, parseJsonColumn, query, run } from "../db";
 import type { CloudEnv } from "../env";
@@ -104,12 +104,10 @@ export async function handlePlayerProgramDetail(request: Request, env: CloudEnv,
   );
   if (!version) return nestError("발행 스냅샷을 찾을 수 없어요", 404);
   const snapshot = parseJsonColumn<PublishedSnapshot>(version.snapshot, {} as PublishedSnapshot);
-  const videos = snapshot.videos ?? {};
-  return json({
-    ...snapshot,
-    videos,
-    playItems: expand(snapshot, videos),
-    publishedVersion: version.version,
-    publishedAt: version.published_at,
-  });
+  return json(
+    presentPlayerProgramSnapshot(snapshot, {
+      publishedVersion: version.version,
+      publishedAt: version.published_at,
+    }),
+  );
 }

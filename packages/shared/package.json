@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "node --test test/expand.test.mjs test/html-skin.test.mjs test/ipt-power-bell-sample-program.test.mjs test/step-duration.test.mjs test/builder-step-to-shared.test.mjs"
+    "test": "node --test test/expand.test.mjs test/html-skin.test.mjs test/ipt-power-bell-sample-program.test.mjs test/step-duration.test.mjs test/builder-step-to-shared.test.mjs test/builder-draft-snapshot.test.mjs"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

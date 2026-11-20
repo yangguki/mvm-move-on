@@ -1,3 +1,4 @@
+export * from "./builder-draft-snapshot";
 export * from "./catalog-aggregate";
 export * from "./html-skin-publish";
 export * from "./program-delete";

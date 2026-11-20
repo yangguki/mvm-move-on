@@ -1,3 +1,4 @@
+import { presentPlayerProgramSnapshot, type PublishedSnapshot } from "@mvn/shared";
 import {
   isCloudDataMode,
   playerApiPrefix,
@@ -39,6 +40,8 @@ let skinIframe: HTMLIFrameElement | null = null;
 let htmlSkinPlayer: import("./html-skin-player").HtmlSkinPlayer | null = null;
 let playingProgramId: string | null = null;
 let playingPublishedVersion: number | null = null;
+let lastPlayedProgramId: string | null = null;
+let lastPlayedPublishedVersion: number | null = null;
 let programPollTimer: number | null = null;
 const assetBase = import.meta.env.BASE_URL;
 
@@ -128,6 +131,7 @@ function initPairing() {
         statusEl.textContent = "승인 완료!";
         await loadPrograms();
         showScreen("list");
+        ensureProgramPoll();
       } else if (res.status === "expired") {
         statusEl.textContent = "코드 만료, 재발급 중...";
         requestCode();
@@ -203,15 +207,61 @@ function stripAudioForCloud<T extends ProgramDetail>(program: T): T {
   return { ...program, skin };
 }
 
-function stopProgramPoll() {
-  if (programPollTimer != null) {
-    clearInterval(programPollTimer);
-    programPollTimer = null;
+function enrichPlayerProgram<T extends ProgramDetail>(detail: T): T {
+  const snap = detail as unknown as PublishedSnapshot;
+  const { publishedVersion, publishedAt } = detail;
+  return {
+    ...detail,
+    ...presentPlayerProgramSnapshot(snap, { publishedVersion, publishedAt }),
+  } as T;
+}
+
+function ensureProgramPoll() {
+  if (programPollTimer != null || PROGRAM_PUBLISH_CHECK_MS <= 0) return;
+  programPollTimer = window.setInterval(() => void pollTrackedProgramVersion(), PROGRAM_PUBLISH_CHECK_MS);
+}
+
+function pollTarget(): { id: string; version: number } | null {
+  if (currentScreen === "play" && playingProgramId != null && playingPublishedVersion != null) {
+    return { id: playingProgramId, version: playingPublishedVersion };
+  }
+  if (currentScreen === "done" && lastPlayedProgramId != null && lastPlayedPublishedVersion != null) {
+    return { id: lastPlayedProgramId, version: lastPlayedPublishedVersion };
+  }
+  if (currentScreen === "list" && selectedProgram) {
+    return { id: selectedProgram.id, version: selectedProgram.publishedVersion };
+  }
+  return null;
+}
+
+function programListEntry(detail: ProgramDetail): Program {
+  return {
+    id: detail.id,
+    name: detail.name,
+    publishedVersion: detail.publishedVersion,
+    publishedAt: detail.publishedAt,
+  };
+}
+
+function patchProgramInList(detail: ProgramDetail) {
+  const entry = programListEntry(detail);
+  const idx = programs.findIndex((p) => p.id === detail.id);
+  if (idx >= 0) programs[idx] = entry;
+  if (selectedProgram?.id === detail.id) selectedProgram = entry;
+  if (currentScreen === "list") {
+    document.querySelectorAll(".program-item").forEach((el, i) => {
+      const prog = programs[i];
+      if (!prog || prog.id !== detail.id) return;
+      const meta = el.querySelector(".program-meta");
+      if (meta) {
+        meta.textContent = `v${prog.publishedVersion} · ${new Date(prog.publishedAt).toLocaleString("ko-KR")}`;
+      }
+    });
   }
 }
 
 function applyProgramUpdate(detail: ProgramDetail) {
-  const payload = stripAudioForCloud(detail);
+  const payload = stripAudioForCloud(enrichPlayerProgram(detail));
   if (payload.skin?.kind === "html") {
     htmlSkinPlayer?.start(payload as never);
     return;
@@ -219,24 +269,48 @@ function applyProgramUpdate(detail: ProgramDetail) {
   skinIframe?.contentWindow?.postMessage({ type: "mvn:program", program: payload, loop: false }, "*");
 }
 
-async function pollPlayingProgram() {
-  if (!playingProgramId || currentScreen !== "play") return;
+async function pollTrackedProgramVersion() {
+  const target = pollTarget();
+  if (!target) return;
   try {
-    const detail = await api<ProgramDetail>(`/programs/${playingProgramId}`);
-    if (detail.publishedVersion === playingPublishedVersion) return;
-    playingPublishedVersion = detail.publishedVersion;
-    applyProgramUpdate(detail);
+    const detail = enrichPlayerProgram(stripAudioForCloud(await api<ProgramDetail>(`/programs/${target.id}`)));
+    if (detail.publishedVersion === target.version) return;
+    await onTrackedProgramRepublished(detail);
   } catch {
-    // keep playback on transient errors
+    // keep UI on transient errors
   }
 }
 
-function startProgramPoll(programId: string, publishedVersion: number) {
-  stopProgramPoll();
-  playingProgramId = programId;
-  playingPublishedVersion = publishedVersion;
-  if (PROGRAM_PUBLISH_CHECK_MS <= 0) return;
-  programPollTimer = window.setInterval(() => void pollPlayingProgram(), PROGRAM_PUBLISH_CHECK_MS);
+async function onTrackedProgramRepublished(detail: ProgramDetail) {
+  lastPlayedProgramId = detail.id;
+  lastPlayedPublishedVersion = detail.publishedVersion;
+  patchProgramInList(detail);
+
+  if (currentScreen === "play" && playingProgramId === detail.id) {
+    playingPublishedVersion = detail.publishedVersion;
+    applyProgramUpdate(detail);
+    return;
+  }
+
+  if (currentScreen === "done") {
+    selectedProgram = programListEntry(detail);
+    await beginPlayWithDetail(detail);
+    return;
+  }
+
+  if (currentScreen === "list") {
+    selectedProgram = programListEntry(detail);
+  }
+}
+
+function beginPlayWithDetail(detail: ProgramDetail) {
+  showScreen("play");
+  launchSkin(detail);
+  playingProgramId = detail.id;
+  playingPublishedVersion = detail.publishedVersion;
+  lastPlayedProgramId = detail.id;
+  lastPlayedPublishedVersion = detail.publishedVersion;
+  ensureProgramPoll();
 }
 
 async function startPlay() {
@@ -244,10 +318,8 @@ async function startPlay() {
   showLoading(true);
   hideError();
   try {
-    const detail = stripAudioForCloud(await api<ProgramDetail>(`/programs/${selectedProgram.id}`));
-    showScreen("play");
-    launchSkin(detail);
-    startProgramPoll(detail.id, detail.publishedVersion);
+    const detail = enrichPlayerProgram(stripAudioForCloud(await api<ProgramDetail>(`/programs/${selectedProgram.id}`)));
+    beginPlayWithDetail(detail);
   } catch (err) {
     showError(err instanceof Error ? err.message : "프로그램 불러오기 실패");
   } finally {
@@ -290,7 +362,10 @@ function onSkinMessage(ev: MessageEvent) {
 }
 
 function cleanup() {
-  stopProgramPoll();
+  if (playingProgramId != null) {
+    lastPlayedProgramId = playingProgramId;
+    lastPlayedPublishedVersion = playingPublishedVersion;
+  }
   playingProgramId = null;
   playingPublishedVersion = null;
   window.removeEventListener("message", onSkinMessage);
@@ -339,7 +414,12 @@ function init() {
   const saved = localStorage.getItem(TOKEN_KEY);
   if (saved) {
     deviceToken = saved;
-    loadPrograms().then(() => showScreen("list")).catch(() => showScreen("pair"));
+    loadPrograms()
+      .then(() => {
+        showScreen("list");
+        ensureProgramPoll();
+      })
+      .catch(() => showScreen("pair"));
   } else {
     initPairing();
   }

@@ -1,3 +1,5 @@
+import { resolveVideoStepTiming } from "./step-duration";
+
 export type ProgramStatus = "draft" | "published";
 
 export type SkinOptions = {
@@ -162,6 +164,24 @@ export type PlayItem = {
 
 type FlatStep = Step & { video?: Video };
 
+/** html 스킨은 화면 슬롯, tokens 스킨은 exercise 타입이 영상 단계입니다. */
+export function stepUsesVideoSlot(program: Program, step: Step): boolean {
+  if (program.skin?.kind === "html" && step.screenId?.trim()) {
+    const screen = program.skin.screens?.[step.screenId.trim()];
+    if (screen) return screen.hasVideoSlot;
+  }
+  return step.type === "exercise";
+}
+
+export function resolvePlayItemDurationSec(program: Program, step: Step, video?: Video): number {
+  return resolveVideoStepTiming({
+    repeatCount: step.repeatCount,
+    durationSec: step.durationSec,
+    videoDurationSec: video?.durationSec,
+    hasVideoSlot: stepUsesVideoSlot(program, step),
+  }).durationSec;
+}
+
 function isGroup(item: ProgramItem): item is Group {
   return item.type === "group";
 }
@@ -237,7 +257,7 @@ export function expand(program: Program, videos: Video[] | VideoMap = []): PlayI
       index,
       stepId: step.id,
       type: step.type,
-      durationSec: step.durationSec,
+      durationSec: resolvePlayItemDurationSec(program, step, step.video),
       video: step.video,
       screenId: step.screenId,
       label: stepLabel(step, videoMap),
@@ -249,4 +269,18 @@ export function expand(program: Program, videos: Video[] | VideoMap = []): PlayI
 
 export function playTotalSec(playItems: PlayItem[]): number {
   return playItems.reduce((sum, item) => sum + item.durationSec, 0);
+}
+
+/** 플레이어 API: 스냅샷에서 playItems·videos를 일관되게 풉니다. */
+export function presentPlayerProgramSnapshot(
+  snapshot: PublishedSnapshot,
+  meta: { publishedVersion: number; publishedAt: string },
+) {
+  const videos = asVideoMap(snapshot.videos);
+  return {
+    ...snapshot,
+    videos,
+    playItems: expand(snapshot, videos),
+    ...meta,
+  };
 }

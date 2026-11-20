@@ -80,6 +80,59 @@ describe("expand", () => {
     assert.equal(play[0].video?.name, "덤벨 숄더 프레스");
     assert.equal(play[0].label, "덤벨 숄더 프레스");
   });
+
+  it("html 영상 슬롯: repeatCount×클립 길이로 durationSec를 쓴다 (화면 기본값 무시)", () => {
+    const video = {
+      id: "v1",
+      name: "클립",
+      url: "/media/clip.mp4",
+      durationSec: 4,
+      thumbnailUrl: "/media/thumb.jpg",
+      width: 1920,
+      height: 1080,
+    };
+    const program = {
+      id: "html",
+      name: "html 영상",
+      status: "published",
+      draftUpdatedAt: "2026-11-13T00:00:00.000Z",
+      publishedVersion: 1,
+      skin: {
+        id: "ipt",
+        kind: "html",
+        options: { pointColor: "#C8F31D", nextLeadSec: 10 },
+        screens: {
+          ex: {
+            id: "ex",
+            title: "운동",
+            html: '<div data-mvn-video></div>',
+            css: "",
+            hasVideoSlot: true,
+            hasNextVideoSlot: false,
+            titleOnly: false,
+            version: 1,
+          },
+        },
+      },
+      items: [
+        {
+          id: "s1",
+          type: "exercise",
+          durationSec: 20,
+          repeatCount: 2,
+          videoId: "v1",
+          screenId: "ex",
+        },
+      ],
+      videos: { v1: video },
+    };
+
+    const play = expand(program, program.videos);
+
+    assert.equal(play.length, 1);
+    assert.equal(play[0].durationSec, 8);
+    assert.equal(play[0].video?.url, "/media/clip.mp4");
+  });
 });
 
 describe("validateProgram", () => {
