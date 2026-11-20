@@ -1,4 +1,7 @@
+import { apiBaseUrl, isCloudDataMode } from "./data-mode";
+
 const TOKEN_KEY = "mo_token";
+const CLOUD_SESSION_KEY = "mo_cloud_session";
 
 export function getToken() {
   if (typeof window === "undefined") return null;
@@ -15,6 +18,33 @@ export function setToken(token: string, keep: boolean) {
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(TOKEN_KEY);
+}
+
+export function setCloudSession(keep: boolean) {
+  localStorage.removeItem(CLOUD_SESSION_KEY);
+  sessionStorage.removeItem(CLOUD_SESSION_KEY);
+  const store = keep ? localStorage : sessionStorage;
+  store.setItem(CLOUD_SESSION_KEY, "1");
+}
+
+export function clearCloudSession() {
+  localStorage.removeItem(CLOUD_SESSION_KEY);
+  sessionStorage.removeItem(CLOUD_SESSION_KEY);
+}
+
+export function isAuthenticated(): boolean {
+  if (typeof window === "undefined") return false;
+  if (isCloudDataMode()) {
+    return (
+      localStorage.getItem(CLOUD_SESSION_KEY) === "1" || sessionStorage.getItem(CLOUD_SESSION_KEY) === "1"
+    );
+  }
+  return !!getToken();
+}
+
+export function apiUrl(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${apiBaseUrl()}${normalized}`;
 }
 
 export class ApiError extends Error {
@@ -38,12 +68,20 @@ function messageOf(body: unknown, fallback: string) {
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  const token = getToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const cloud = isCloudDataMode();
+  if (!cloud) {
+    const token = getToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const response = await fetch(`/api${path}`, { ...init, headers });
+  const response = await fetch(apiUrl(path), {
+    ...init,
+    headers,
+    credentials: cloud ? "include" : init.credentials,
+  });
   if (response.status === 401 && path !== "/admin/v1/auth/login") {
-    clearToken();
+    if (cloud) clearCloudSession();
+    else clearToken();
     window.location.assign("/login");
     return new Promise(() => undefined) as Promise<T>;
   }

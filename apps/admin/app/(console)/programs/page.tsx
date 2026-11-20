@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, type MouseEvent } from "react";
+import { Suspense, useCallback, useEffect, useState, type MouseEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { ArrowLeft, Plus, AlertCircle, Trash2 } from "lucide-react";
 import { BuilderScreen } from "./builder-screen";
@@ -141,15 +142,27 @@ function ProgramList({
   );
 }
 
-export default function ProgramsPage() {
-  const [mode, setMode] = useState<"list" | "edit">("list");
-  const [editId, setEditId] = useState<string | undefined>();
+function ProgramsPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const programId = searchParams.get("id")?.trim() || undefined;
+  const [dirty, setDirty] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
 
+  function confirmLeave(): boolean {
+    if (!dirty) return true;
+    return window.confirm("저장하지 않은 변경이 있습니다. 나가시겠습니까?");
+  }
+
   function handleSelect(id: string) {
-    setEditId(id);
-    setMode("edit");
+    if (programId && dirty && programId !== id && !confirmLeave()) return;
+    router.replace(`/programs?id=${encodeURIComponent(id)}`);
+  }
+
+  function handleBack() {
+    if (!confirmLeave()) return;
+    router.replace("/programs");
   }
 
   async function handleNew() {
@@ -162,13 +175,11 @@ export default function ProgramsPage() {
           name: "새 프로그램",
           draft: {
             items: [{ id: "guide-1", type: "guide", durationSec: 10, label: "시작 카운트다운" }],
-            // tokens skin: empty draft works without screenId (html skins require it)
             skin: { id: "wod-chalkboard", options: { pointColor: "#C8F31D", nextLeadSec: 10 } },
           },
         }),
       });
-      setEditId(created.id);
-      setMode("edit");
+      router.replace(`/programs?id=${encodeURIComponent(created.id)}`);
     } catch (e) {
       setCreateError(e instanceof ApiError ? e.message : "프로그램을 만들지 못했어요");
     } finally {
@@ -176,19 +187,14 @@ export default function ProgramsPage() {
     }
   }
 
-  function handleBack() {
-    setMode("list");
-    setEditId(undefined);
-  }
-
-  if (mode === "edit") {
+  if (programId) {
     return (
       <>
         <button type="button" className="btn btn-ghost" onClick={handleBack} style={{ marginBottom: 16 }}>
           <ArrowLeft className="i" aria-hidden />
           목록으로
         </button>
-        <BuilderScreen initialId={editId} onDeleted={handleBack} />
+        <BuilderScreen initialId={programId} onDirtyChange={setDirty} onDeleted={handleBack} />
       </>
     );
   }
@@ -198,5 +204,13 @@ export default function ProgramsPage() {
       {createError ? <p className="form-error">{createError}</p> : null}
       <ProgramList onSelect={handleSelect} onNew={() => void handleNew()} creating={creating} />
     </>
+  );
+}
+
+export default function ProgramsPage() {
+  return (
+    <Suspense fallback={<p className="subtle">불러오는 중…</p>}>
+      <ProgramsPageContent />
+    </Suspense>
   );
 }

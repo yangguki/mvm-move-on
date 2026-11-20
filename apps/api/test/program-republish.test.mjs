@@ -5,7 +5,7 @@ import {
   pickScreenVersionsForItems,
   republishSkinTokensDiffPaths,
   screenVersionsEqual,
-} from "../src/program-republish.ts";
+} from "../../../packages/shared/dist/index.js";
 
 describe("draftContentDiffersFromPublished", () => {
   const items = [

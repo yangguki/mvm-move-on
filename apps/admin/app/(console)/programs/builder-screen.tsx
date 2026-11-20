@@ -17,6 +17,7 @@ import {
   Play,
   Plus,
   Repeat2,
+  Save,
   Send,
   SkipBack,
   SkipForward,
@@ -41,6 +42,7 @@ import {
   type Step as SharedStep,
 } from "@mvn/shared";
 import { ApiError, api } from "@/lib/api";
+import { isCloudDataMode } from "@/lib/data-mode";
 
 type Kind = "countdown" | "exercise" | "rest";
 type Frame = "exercise" | "next" | "rest";
@@ -57,7 +59,11 @@ type Step = {
   groupLabel: string | null;
   groupRepeat: number | null;
 };
-type Program = SharedProgram & { totals?: { seconds: number; stepCount: number }; needsRepublish?: boolean };
+type Program = SharedProgram & {
+  totals?: { seconds: number; stepCount: number };
+  needsRepublish?: boolean;
+  rev?: number;
+};
 type VideoItem = { id: string; name: string; url: string; durationSec: number; thumbnailUrl: string; width: number; height: number; status?: string };
 type AudioItem = { id: string; name: string; kind: string; url: string; durationSec: number; mimeType: string };
 type VoicePackItem = { id: string; name: string; isDefault: boolean };
@@ -130,6 +136,15 @@ function fromShared(program: SharedProgram): Step[] {
     }
   }
   return out;
+}
+
+function draftSnapshotKey(
+  name: string,
+  skinSlug: string,
+  skinOpts: SharedProgram["skin"]["options"],
+  stepList: Step[],
+) {
+  return JSON.stringify({ name, skin: { id: skinSlug, options: skinOpts }, steps: stepList });
 }
 
 function blocksOf(steps: Step[]): Block[] {
@@ -341,7 +356,15 @@ function toSharedProgram(input: {
   };
 }
 
-export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; onDeleted?: () => void }) {
+export function BuilderScreen({
+  initialId,
+  onDeleted,
+  onDirtyChange,
+}: {
+  initialId?: string;
+  onDeleted?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const [programId, setProgramId] = useState(initialId ?? "");
   const [name, setName] = useState("");
   const [skinOptions, setSkinOptions] = useState<SharedProgram["skin"]["options"]>({
@@ -362,6 +385,7 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
   const [needsRepublish, setNeedsRepublish] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
   const [savedAt, setSavedAt] = useState("");
+  const [programRev, setProgramRev] = useState<number | undefined>(undefined);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -372,11 +396,11 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [skinFrameOk, setSkinFrameOk] = useState<boolean | null>(null);
   const [videoForm, setVideoForm] = useState({ name: "", url: "", durationSec: 10, thumbnailUrl: "" });
   const dragFrom = useRef<number | null>(null);
   const snapshot = useRef("");
-  const saveChain = useRef(Promise.resolve<void>(undefined));
   const previewRef = useRef<HTMLIFrameElement | null>(null);
   const htmlPreviewWrapRef = useRef<HTMLDivElement | null>(null);
   const htmlPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -399,8 +423,9 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
     setNeedsRepublish(program.needsRepublish ?? false);
     setUpdatedAt(program.draftUpdatedAt);
     setSavedAt(new Date(program.draftUpdatedAt).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }));
+    setProgramRev(program.rev);
     const next = fromShared(program);
-    snapshot.current = JSON.stringify({ name: program.name, skin: program.skin, steps: next });
+    snapshot.current = draftSnapshotKey(program.name, program.skin.id, program.skin.options, next);
     setSteps(next);
     setSelected((current) => Math.min(current, Math.max(0, next.length - 1)));
     setEmpty(false);
@@ -410,16 +435,17 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [videoList, audioList, packList, skinList] = await Promise.all([
+      const cloud = isCloudDataMode();
+      const [videoList, skinList, audioList, packList] = await Promise.all([
         api<{ items: VideoItem[] }>("/admin/v1/videos"),
-        api<{ items: AudioItem[] }>("/admin/v1/audio"),
-        api<{ items: VoicePackItem[] }>("/admin/v1/voice-packs"),
         api<{ items: SkinItem[] }>("/admin/v1/skins"),
+        cloud ? Promise.resolve({ items: [] as AudioItem[] }) : api<{ items: AudioItem[] }>("/admin/v1/audio"),
+        cloud ? Promise.resolve({ items: [] as VoicePackItem[] }) : api<{ items: VoicePackItem[] }>("/admin/v1/voice-packs"),
       ]);
       setVideos(videoList.items);
+      setSkins(skinList.items);
       setAudioItems(audioList.items);
       setVoicePacks(packList.items);
-      setSkins(skinList.items);
       // Never silently open another program when there is no initialId.
       if (!initialId) {
         setEmpty(true);
@@ -492,8 +518,37 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
     });
   }, [isHtmlSkin, skinScreens, videos]);
 
-  function persist(nextSteps: Step[], nextName = name, nextSkin = skinOptions, nextSkinSlug = selectedSkinSlug) {
-    if (!programId) return Promise.resolve(undefined);
+  const draftKey = useMemo(
+    () => draftSnapshotKey(name, selectedSkinSlug, skinOptions, steps),
+    [steps, name, skinOptions, selectedSkinSlug],
+  );
+  const isDirty = !!programId && !loading && draftKey !== snapshot.current;
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
+  function confirmLeave(): boolean {
+    if (!isDirty) return true;
+    return window.confirm("저장하지 않은 변경이 있습니다. 나가시겠습니까?");
+  }
+
+  async function persist(
+    nextSteps: Step[],
+    nextName = name,
+    nextSkin = skinOptions,
+    nextSkinSlug = selectedSkinSlug,
+  ): Promise<Program | undefined> {
+    if (!programId) return undefined;
     const skinRow = skins.find((s) => s.slug === nextSkinSlug);
     const draftProgram = toSharedProgram({
       id: programId,
@@ -509,42 +564,47 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
       videos,
     });
     draftProgram.skin.options = nextSkin;
-    const run = saveChain.current.then(async () => {
+    try {
       const saved = await api<Program>(`/admin/v1/programs/${programId}`, {
         method: "PUT",
         body: JSON.stringify({
           name: nextName,
           draft: { items: draftProgram.items, skin: draftProgram.skin },
+          ...(programRev != null ? { rev: programRev } : {}),
         }),
       });
+      setProgramRev(saved.rev);
       setPublished(saved.publishedVersion);
       setStatus(saved.status);
       setNeedsRepublish(saved.needsRepublish ?? false);
       setUpdatedAt(saved.draftUpdatedAt);
       setSavedAt(new Date(saved.draftUpdatedAt).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }));
-      snapshot.current = JSON.stringify({ name: saved.name, skin: saved.skin, steps: fromShared(saved) });
+      snapshot.current = draftSnapshotKey(saved.name, saved.skin.id, saved.skin.options, fromShared(saved));
+      setError("");
       return saved;
-    });
-    saveChain.current = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        setError("다른 곳에서 변경됨, 새로고침 필요");
+      } else {
+        setError(caught instanceof ApiError ? caught.message : "저장하지 못했어요");
+      }
+      throw caught;
+    }
   }
 
-  useEffect(() => {
-    const key = JSON.stringify({ name, skin: { id: selectedSkinSlug, options: skinOptions }, steps });
-    if (!programId || key === snapshot.current) return;
-    const timer = window.setTimeout(() => {
-      void persist(steps, name, skinOptions, selectedSkinSlug)
-        .then((saved) => {
-          if (saved) setError("");
-        })
-        .catch((caught) => setError(caught instanceof ApiError ? caught.message : "저장하지 못했어요"));
-    }, 700);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [steps, name, skinOptions, selectedSkinSlug, programId]);
+  async function saveDraft(): Promise<boolean> {
+    if (!programId || saving || !isDirty) return !isDirty;
+    setSaving(true);
+    setNotice("");
+    try {
+      await persist(steps, name, skinOptions, selectedSkinSlug);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
 
   useEffect(() => {
     const step = steps[selected];
@@ -886,16 +946,20 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
 
     setPublishing(true);
     try {
-      // Flush in-flight autosave first; do not nest persist inside saveChain (deadlock).
-      await saveChain.current.catch(() => undefined);
-      await persist(steps, name, skinOptions, selectedSkinSlug);
+      if (isDirty) {
+        try {
+          await persist(steps, name, skinOptions, selectedSkinSlug);
+        } catch {
+          return;
+        }
+      }
       const result = await api<Program>(`/admin/v1/programs/${programId}/publish`, { method: "POST" });
       setPublished(result.publishedVersion);
       setStatus(result.status);
       setNeedsRepublish(result.needsRepublish ?? false);
       setUpdatedAt(result.draftUpdatedAt);
       setSavedAt(new Date(result.draftUpdatedAt).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }));
-      snapshot.current = JSON.stringify({ name: result.name, skin: result.skin, steps: fromShared(result) });
+      snapshot.current = draftSnapshotKey(result.name, result.skin.id, result.skin.options, fromShared(result));
       setNotice(`v${result.publishedVersion}을 발행했어요`);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "발행하지 못했어요");
@@ -1266,7 +1330,14 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
   return (
     <>
       <header className="editbar">
-        <a className="icon-btn" href="/" aria-label="대시보드">
+        <a
+          className="icon-btn"
+          href="/"
+          aria-label="대시보드"
+          onClick={(event) => {
+            if (!confirmLeave()) event.preventDefault();
+          }}
+        >
           <ArrowLeft className="i" aria-hidden />
         </a>
         <div className="crumbs">
@@ -1293,9 +1364,17 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
           {status === "published" ? "게시됨" : "초안"}
         </span>
         {showRepublishBadge ? <span className="badge badge-outline" style={{ color: "var(--danger, #b91c1c)" }}>재게시 필요</span> : null}
-        <span className="saved">
+        <span className={`saved${isDirty ? " text-warn" : ""}`} data-testid="builder-save-status">
           <CheckCheck className="i i-sm" aria-hidden />
-          {savedAt ? `자동 저장됨 · ${savedAt}` : "불러오는 중"}
+          {saving
+            ? "저장 중…"
+            : isDirty
+              ? "저장 안 됨"
+              : savedAt
+                ? `저장됨 · ${savedAt}`
+                : loading
+                  ? "불러오는 중"
+                  : "—"}
         </span>
         <div className="row" style={{ marginLeft: "auto" }}>
           <span className="t-sm subtle" style={{ marginRight: 4 }}>
@@ -1315,8 +1394,18 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
           </button>
           <button
             type="button"
+            className="btn btn-secondary btn-sm"
+            data-testid="builder-save"
+            disabled={saving || busy || !isDirty}
+            onClick={() => void saveDraft()}
+          >
+            <Save className="i" aria-hidden />
+            {saving ? "저장 중…" : "저장"}
+          </button>
+          <button
+            type="button"
             className="btn btn-accent btn-sm"
-            disabled={publishing || busy}
+            disabled={publishing || busy || saving}
             onClick={() => void publish()}
           >
             <Send className="i" aria-hidden />
@@ -1611,52 +1700,54 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
               </small>
             </div>
           </div>
-          <div className="insp-body" style={{ borderBottom: "1px solid var(--border, #e5e7eb)", paddingBottom: 12, marginBottom: 4 }}>
-            <div className="field">
-              <span className="label">배경음악</span>
-              <select
-                className="input"
-                value={skinOptions.musicId ?? ""}
-                onChange={(event) =>
-                  setSkinOptions((prev) => ({
-                    ...prev,
-                    musicId: event.target.value || undefined,
-                  }))
-                }
-              >
-                <option value="">기본 음악</option>
-                {audioItems
-                  .filter((item) => item.kind === "music")
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
+          {!isCloudDataMode() ? (
+            <div className="insp-body" style={{ borderBottom: "1px solid var(--border, #e5e7eb)", paddingBottom: 12, marginBottom: 4 }}>
+              <div className="field">
+                <span className="label">배경음악</span>
+                <select
+                  className="input"
+                  value={skinOptions.musicId ?? ""}
+                  onChange={(event) =>
+                    setSkinOptions((prev) => ({
+                      ...prev,
+                      musicId: event.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">기본 음악</option>
+                  {audioItems
+                    .filter((item) => item.kind === "music")
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="field">
+                <span className="label">음성 팩</span>
+                <select
+                  className="input"
+                  value={skinOptions.voicePackId ?? ""}
+                  onChange={(event) =>
+                    setSkinOptions((prev) => ({
+                      ...prev,
+                      voicePackId: event.target.value || undefined,
+                    }))
+                  }
+                >
+                  <option value="">기본 음성 팩</option>
+                  {voicePacks.map((pack) => (
+                    <option key={pack.id} value={pack.id}>
+                      {pack.name}
+                      {pack.isDefault ? " (기본)" : ""}
                     </option>
                   ))}
-              </select>
+                </select>
+                <small>게시에 url이 스냅샷에 풀립니다</small>
+              </div>
             </div>
-            <div className="field">
-              <span className="label">음성 팩</span>
-              <select
-                className="input"
-                value={skinOptions.voicePackId ?? ""}
-                onChange={(event) =>
-                  setSkinOptions((prev) => ({
-                    ...prev,
-                    voicePackId: event.target.value || undefined,
-                  }))
-                }
-              >
-                <option value="">기본 음성 팩</option>
-                {voicePacks.map((pack) => (
-                  <option key={pack.id} value={pack.id}>
-                    {pack.name}
-                    {pack.isDefault ? " (기본)" : ""}
-                  </option>
-                ))}
-              </select>
-              <small>게시에 url이 스냅샷에 풀립니다</small>
-            </div>
-          </div>
+          ) : null}
           {current ? (
             <>
               <div className="insp-body">

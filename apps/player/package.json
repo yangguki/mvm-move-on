@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --port 3002",
     "build": "tsc && vite build",
+    "build:cloud": "node scripts/build-cloud.mjs",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview --port 3002",
     "generate-icons": "node scripts/generate-icons.mjs"
   },

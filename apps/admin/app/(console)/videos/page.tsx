@@ -14,7 +14,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, apiUrl } from "@/lib/api";
+import { isCloudDataMode } from "@/lib/data-mode";
 
 type VideoItem = {
   id: string;
@@ -51,6 +52,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 export default function VideosPage() {
+  const cloud = isCloudDataMode();
   const [items, setItems] = useState<VideoItem[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -100,10 +102,10 @@ export default function VideosPage() {
       }
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/admin/v1/videos/upload", {
+      const res = await fetch(apiUrl("/admin/v1/videos/upload"), {
         method: "POST",
         body: formData,
-        credentials: "include",
+        credentials: isCloudDataMode() ? "include" : "same-origin",
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -165,7 +167,9 @@ export default function VideosPage() {
       <header style={{ marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>운동 영상</h1>
         <p style={{ margin: "6px 0 0", color: "var(--muted, #6b7280)", fontSize: 14 }}>
-          영상을 업로드하면 자동으로 TV 호환 형식(H.264 mp4)으로 변환됩니다. GIF도 지원합니다.
+          {cloud
+            ? "외부 영상 URL을 등록해 프로그램에 사용할 수 있습니다."
+            : "영상을 업로드하면 자동으로 TV 호환 형식(H.264 mp4)으로 변환됩니다. GIF도 지원합니다."}
         </p>
       </header>
 
@@ -176,36 +180,38 @@ export default function VideosPage() {
       )}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <div
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-          style={{
-            border: "2px dashed var(--border, #e5e7eb)",
-            borderRadius: 8,
-            padding: "12px 16px",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            cursor: busy ? "wait" : "pointer",
-            background: "var(--bg-subtle, #f9fafb)",
-          }}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload className="i" aria-hidden />
-          <span>파일을 드래그하거나 클릭해서 업로드</span>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".mp4,.mov,.webm,.gif"
-            hidden
-            disabled={busy}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void uploadFile(file);
-              e.target.value = "";
+        {!cloud ? (
+          <div
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+            style={{
+              border: "2px dashed var(--border, #e5e7eb)",
+              borderRadius: 8,
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: busy ? "wait" : "pointer",
+              background: "var(--bg-subtle, #f9fafb)",
             }}
-          />
-        </div>
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="i" aria-hidden />
+            <span>파일을 드래그하거나 클릭해서 업로드</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".mp4,.mov,.webm,.gif"
+              hidden
+              disabled={busy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadFile(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        ) : null}
         <button
           type="button"
           className="btn btn-secondary btn-sm"

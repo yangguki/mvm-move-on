@@ -7,7 +7,7 @@ import {
   parseForceFlag,
   parseMoveDirection,
   SkinScreenOpsError,
-} from "../src/skin-screen-ops.ts";
+} from "../../../packages/shared/dist/index.js";
 
 describe("duplicateScreenTitle", () => {
   it("appends copy suffix", () => {

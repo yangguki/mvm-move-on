@@ -1,0 +1,9 @@
+name = "mvn"
+pages_build_output_dir = "./public"
+compatibility_date = "2025-04-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mvn"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "d1/migrations"

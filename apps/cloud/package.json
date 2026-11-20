@@ -1,0 +1,27 @@
+{
+  "name": "@mvn/cloud",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:cloud:all": "pnpm --filter @mvn/admin build:cloud && pnpm --filter @mvn/player build:cloud",
+    "export-seed": "node scripts/export-seed.mjs",
+    "check-seed": "node scripts/check-seed.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply mvn --local",
+    "db:seed:local": "node scripts/seed-local.mjs",
+    "dev": "wrangler pages dev public --port 8788 --binding ADMIN_PASSWORD=local-dev-password --binding SESSION_SECRET=local-dev-secret --binding JWT_DEVICE_SECRET=mvn-device-secret",
+    "typecheck": "tsc --noEmit",
+    "pretest": "pnpm --filter @mvn/shared build",
+    "test": "node --import tsx/esm --experimental-strip-types --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@mvn/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261118.1",
+    "sql.js": "^1.12.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.14.0"
+  }
+}

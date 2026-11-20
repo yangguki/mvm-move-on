@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { snapshotScreenVersions } from "../src/html-skin-publish.ts";
+import { snapshotScreenVersions } from "../../../packages/shared/dist/index.js";
 
 describe("snapshotScreenVersions", () => {
   it("maps screen id to version", () => {

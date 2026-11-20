@@ -1,0 +1,2 @@
+ADMIN_PASSWORD=local-dev-password
+SESSION_SECRET=local-dev-secret

@@ -18,7 +18,7 @@ export function markHtmlSkinLiveTokens(html: string, tokens: HtmlSkinTokenMap): 
 
 /** 이미 mark된 HTML에서 span 값만 갱신 */
 export function refreshHtmlSkinLiveTokens(html: string, tokens: HtmlSkinTokenMap): string {
-  return html.replace(/<span data-mvn-token="([^"]+)">([\s\S]*?)<\/span>/g, (full, rawKey: string) => {
+  return html.replace(/<span data-mvn-token="([^"]+)">([\s\S]*?)<\/span>/g, (_full, rawKey: string) => {
     const key = String(rawKey).trim();
     const v = tokenText(tokens[key]);
     return `<span data-mvn-token="${key}">${v}</span>`;

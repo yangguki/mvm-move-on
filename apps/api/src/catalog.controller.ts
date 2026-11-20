@@ -1,4 +1,12 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import {
+  countStoresNeedingAttention,
+  deviceListSummaryFromGroupBy,
+  filterOfflineDevices,
+  filterOnlineDevices,
+  filterPlayingDevices,
+  storeConnectivityState,
+} from "@mvn/shared";
 import { AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
 
@@ -13,11 +21,11 @@ export class CatalogController {
       include: { store: true },
       orderBy: { code: "asc" },
     });
-    const playing = devices.filter((device) => device.status === "ok");
-    const online = devices.filter((device) => !device.offline);
-    const offline = devices.filter((device) => device.offline);
+    const playing = filterPlayingDevices(devices);
+    const online = filterOnlineDevices(devices);
+    const offline = filterOfflineDevices(devices);
     const stores = await this.prisma.store.findMany({ include: { devices: true } });
-    const attention = stores.filter((store) => store.devices.some((device) => device.offline)).length;
+    const attention = countStoresNeedingAttention(stores);
     const now = new Intl.DateTimeFormat("ko-KR", {
       timeZone: "Asia/Seoul",
       month: "long",
@@ -50,7 +58,7 @@ export class CatalogController {
       const offline = store.devices.length - online;
       const skin = store.devices[0]?.skin ?? null;
       const playing = store.devices.find((device) => device.status === "ok")?.playing ?? null;
-      const state = offline === store.devices.length && store.devices.length > 0 ? "err" : offline > 0 ? "info" : "ok";
+      const state = storeConnectivityState(offline, store.devices.length);
       return {
         id: store.id,
         name: store.name,
@@ -96,15 +104,8 @@ export class CatalogController {
       }),
       this.prisma.device.groupBy({ by: ["status"], _count: { _all: true } }),
     ]);
-    const tally = Object.fromEntries(grouped.map((row) => [row.status, row._count._all]));
     return {
-      summary: {
-        total: grouped.reduce((sum, row) => sum + row._count._all, 0),
-        playing: tally.ok ?? 0,
-        idle: tally.neutral ?? 0,
-        updating: tally.info ?? 0,
-        offline: tally.err ?? 0,
-      },
+      summary: deviceListSummaryFromGroupBy(grouped),
       items: rows.map((device) => ({
         id: device.id,
         name: device.name,

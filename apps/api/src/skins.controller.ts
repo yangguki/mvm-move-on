@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { AuthGuard } from "./auth.guard";
-import { findFreeSlug, parseSkinCreateBody, SKIN_NAME_MAX_LENGTH, SkinCreateBodyError } from "./skin-create";
+import { findFreeSlug, parseSkinCreateBody, SKIN_NAME_MAX_LENGTH, SkinCreateBodyError } from "@mvn/shared";
 import { PrismaService } from "./prisma.service";
 
 type SkinTokens = {

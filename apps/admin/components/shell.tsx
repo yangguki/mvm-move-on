@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, clearToken, getToken } from "@/lib/api";
+import { api, clearCloudSession, clearToken, isAuthenticated } from "@/lib/api";
+import { isCloudDataMode, isNavHiddenInCloud } from "@/lib/data-mode";
 import {
   Bell,
   ChevronRight,
@@ -34,7 +35,7 @@ type NavLink = {
 type NavEntry = { label: string } | NavLink;
 
 function nav(counts: { offline: number; stores: number; programs: number }): NavEntry[] {
-  return [
+  const entries: NavEntry[] = [
     { href: "/", label: "대시보드", icon: LayoutGrid },
     { label: "운영" },
     { href: "/devices", label: "TV · 기기", icon: Monitor, meta: String(counts.offline), alert: counts.offline > 0 },
@@ -47,20 +48,24 @@ function nav(counts: { offline: number; stores: number; programs: number }): Nav
     { label: "설정" },
     { href: "/accounts", label: "계정 · 권한", icon: Users },
   ];
+  return entries.filter((entry) => !("href" in entry) || !isNavHiddenInCloud(entry.href));
 }
 
-const RAIL: Array<NavLink | "sep"> = [
-  { href: "/", label: "대시보드", icon: LayoutGrid },
-  { href: "/devices", label: "TV · 기기", icon: Monitor },
-  { href: "/stores", label: "지점", icon: Store },
-  "sep",
-  { href: "/programs", label: "프로그램", icon: ListVideo },
-  { href: "/videos", label: "운동 영상", icon: Clapperboard },
-  { href: "/audio", label: "오디오", icon: Mic2 },
-  { href: "/skins", label: "스킨", icon: Palette },
-  "sep",
-  { href: "/accounts", label: "계정 · 권한", icon: Users },
-];
+function railLinks(): Array<NavLink | "sep"> {
+  const items: Array<NavLink | "sep"> = [
+    { href: "/", label: "대시보드", icon: LayoutGrid },
+    { href: "/devices", label: "TV · 기기", icon: Monitor },
+    { href: "/stores", label: "지점", icon: Store },
+    "sep",
+    { href: "/programs", label: "프로그램", icon: ListVideo },
+    { href: "/videos", label: "운동 영상", icon: Clapperboard },
+    { href: "/audio", label: "오디오", icon: Mic2 },
+    { href: "/skins", label: "스킨", icon: Palette },
+    "sep",
+    { href: "/accounts", label: "계정 · 권한", icon: Users },
+  ];
+  return items.filter((entry) => entry === "sep" || !isNavHiddenInCloud(entry.href));
+}
 
 function tabs(offline: number): Array<NavLink & { badge?: string }> {
   return [
@@ -94,7 +99,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const skinCrumb = pathname === "/skins";
 
   useEffect(() => {
-    if (!getToken()) {
+    if (!isAuthenticated()) {
       router.replace("/login");
       return;
     }
@@ -114,7 +119,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     await api("/admin/v1/auth/logout", { method: "POST" }).catch(() => undefined);
-    clearToken();
+    if (isCloudDataMode()) clearCloudSession();
+    else clearToken();
     router.replace("/login");
   }
 
@@ -127,7 +133,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/" className="rail-logo" aria-label="MOVE ON 홈">
             <Logo variant="icon" height={32} radius={8} />
           </Link>
-          {RAIL.map((entry, index) => {
+          {railLinks().map((entry, index) => {
             if (entry === "sep") return <span key={`sep-${index}`} className="sep" />;
             const Icon = entry.icon;
             const on = isOn(pathname, entry.href);
@@ -229,7 +235,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <nav className="tabbar" aria-label="모바일 메뉴">
         {tabs(counts.offline).map((tab) => {
           const Icon = tab.icon;
-          const on = tab.href === "/stores" ? ["/stores", "/videos", "/audio", "/accounts"].some((href) => isOn(pathname, href)) : isOn(pathname, tab.href);
+          const moreHrefs = ["/stores", "/videos", "/audio", "/accounts"].filter((href) => !isNavHiddenInCloud(href));
+          const on = tab.href === "/stores" ? moreHrefs.some((href) => isOn(pathname, href)) : isOn(pathname, tab.href);
           return (
             <Link key={tab.label} href={tab.href} className={on ? "on" : undefined} aria-current={on ? "page" : undefined}>
               <Icon className="i" aria-hidden />

@@ -1,3 +1,9 @@
+import {
+  isCloudDataMode,
+  playerApiPrefix,
+  PROGRAM_PUBLISH_CHECK_MS,
+} from "./data-mode";
+
 type ScreenName = "pair" | "list" | "play" | "done";
 type Program = {
   id: string;
@@ -31,6 +37,24 @@ let deviceToken: string | null = null;
 let isPaused = false;
 let skinIframe: HTMLIFrameElement | null = null;
 let htmlSkinPlayer: import("./html-skin-player").HtmlSkinPlayer | null = null;
+let playingProgramId: string | null = null;
+let playingPublishedVersion: number | null = null;
+let programPollTimer: number | null = null;
+const assetBase = import.meta.env.BASE_URL;
+
+if (isCloudDataMode()) {
+  (window as unknown as { __MVN_PROGRAM_POLL_MS?: number }).__MVN_PROGRAM_POLL_MS = PROGRAM_PUBLISH_CHECK_MS;
+}
+
+function playerPath(suffix: string): string {
+  const base = playerApiPrefix();
+  return `${base}${suffix.startsWith("/") ? suffix : `/${suffix}`}`;
+}
+
+function assetUrl(path: string): string {
+  const normalized = path.startsWith("/") ? path.slice(1) : path;
+  return `${assetBase}${normalized}`;
+}
 
 function showScreen(name: ScreenName) {
   Object.entries(screens).forEach(([key, el]) => {
@@ -55,7 +79,7 @@ function hideError() {
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (deviceToken) headers["X-Device-Token"] = deviceToken;
-  const res = await fetch(path, { ...options, headers: { ...headers, ...options.headers } });
+  const res = await fetch(playerPath(path), { ...options, headers: { ...headers, ...options.headers } });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { message?: string }).message || `HTTP ${res.status}`);
@@ -76,7 +100,7 @@ function initPairing() {
     statusEl.textContent = "코드 발급 중...";
     codeDisplay.textContent = "------";
     try {
-      var res = await api<{ code: string; expiresAt: string }>("/player/v1/code", { method: "POST" });
+      var res = await api<{ code: string; expiresAt: string }>("/code", { method: "POST" });
       currentCode = res.code;
       codeDisplay.textContent = res.code;
       statusEl.textContent = "관리자 화면에서 이 코드를 입력하세요";
@@ -96,7 +120,7 @@ function initPairing() {
   async function checkStatus() {
     if (!currentCode) return;
     try {
-      var res = await api<{ status: string; token?: string }>("/player/v1/code/" + currentCode + "/status");
+      var res = await api<{ status: string; token?: string }>("/code/" + currentCode + "/status");
       if (res.status === "approved" && res.token) {
         if (pairingPollTimer) clearInterval(pairingPollTimer);
         deviceToken = res.token;
@@ -119,7 +143,7 @@ function initPairing() {
 async function loadPrograms() {
   showLoading(true);
   try {
-    const res = await api<{ items: Program[] }>("/player/v1/programs");
+    const res = await api<{ items: Program[] }>("/programs");
     programs = res.items;
     renderPrograms();
   } catch (err) {
@@ -171,14 +195,59 @@ function selectProgram(prog: Program, el: HTMLElement) {
   $<HTMLButtonElement>("play-btn").disabled = false;
 }
 
+function stripAudioForCloud<T extends ProgramDetail>(program: T): T {
+  if (!isCloudDataMode()) return program;
+  const skin = { ...program.skin, options: { ...program.skin.options } };
+  delete (skin as { music?: unknown }).music;
+  delete (skin as { voicePack?: unknown }).voicePack;
+  return { ...program, skin };
+}
+
+function stopProgramPoll() {
+  if (programPollTimer != null) {
+    clearInterval(programPollTimer);
+    programPollTimer = null;
+  }
+}
+
+function applyProgramUpdate(detail: ProgramDetail) {
+  const payload = stripAudioForCloud(detail);
+  if (payload.skin?.kind === "html") {
+    htmlSkinPlayer?.start(payload as never);
+    return;
+  }
+  skinIframe?.contentWindow?.postMessage({ type: "mvn:program", program: payload, loop: false }, "*");
+}
+
+async function pollPlayingProgram() {
+  if (!playingProgramId || currentScreen !== "play") return;
+  try {
+    const detail = await api<ProgramDetail>(`/programs/${playingProgramId}`);
+    if (detail.publishedVersion === playingPublishedVersion) return;
+    playingPublishedVersion = detail.publishedVersion;
+    applyProgramUpdate(detail);
+  } catch {
+    // keep playback on transient errors
+  }
+}
+
+function startProgramPoll(programId: string, publishedVersion: number) {
+  stopProgramPoll();
+  playingProgramId = programId;
+  playingPublishedVersion = publishedVersion;
+  if (PROGRAM_PUBLISH_CHECK_MS <= 0) return;
+  programPollTimer = window.setInterval(() => void pollPlayingProgram(), PROGRAM_PUBLISH_CHECK_MS);
+}
+
 async function startPlay() {
   if (!selectedProgram) return;
   showLoading(true);
   hideError();
   try {
-    const detail = await api<ProgramDetail>(`/player/v1/programs/${selectedProgram.id}`);
+    const detail = stripAudioForCloud(await api<ProgramDetail>(`/programs/${selectedProgram.id}`));
     showScreen("play");
     launchSkin(detail);
+    startProgramPoll(detail.id, detail.publishedVersion);
   } catch (err) {
     showError(err instanceof Error ? err.message : "프로그램 불러오기 실패");
   } finally {
@@ -221,6 +290,9 @@ function onSkinMessage(ev: MessageEvent) {
 }
 
 function cleanup() {
+  stopProgramPoll();
+  playingProgramId = null;
+  playingPublishedVersion = null;
   window.removeEventListener("message", onSkinMessage);
   htmlSkinPlayer?.destroy();
   htmlSkinPlayer = null;
@@ -261,7 +333,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 function init() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.register(assetUrl("sw.js")).catch(() => {});
   }
 
   const saved = localStorage.getItem(TOKEN_KEY);

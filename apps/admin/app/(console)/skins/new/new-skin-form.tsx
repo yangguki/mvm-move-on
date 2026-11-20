@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { skinDetailPath } from "@/lib/admin-paths";
 import { ApiError, api } from "@/lib/api";
 
 const NAME_MAX = 60;
@@ -32,7 +33,7 @@ export function NewSkinForm() {
         method: "POST",
         body: JSON.stringify({ name: trimmed }),
       });
-      router.push(`/skins/${created.id}`);
+      router.push(skinDetailPath(created.id));
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "스킨을 만들지 못했어요");
       setPending(false);

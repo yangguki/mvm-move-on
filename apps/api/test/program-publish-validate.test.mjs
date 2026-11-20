@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   collectMissingPublishVideos,
   missingPublishVideosMessage,
-} from "../src/program-publish-validate.ts";
+} from "../../../packages/shared/dist/index.js";
 
 describe("collectMissingPublishVideos", () => {
   it("tokens: exercise without videoId is missing", () => {

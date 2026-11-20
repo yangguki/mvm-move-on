@@ -11,65 +11,34 @@ import {
   Put,
   UseGuards,
 } from "@nestjs/common";
-import { programDeleteBlockedMessage } from "./program-delete";
 import {
   collectMissingPublishVideos,
-  missingPublishVideosMessage,
-} from "./program-publish-validate";
-import {
+  collectMissingHtmlProgramScreens,
   collectVideoRefs,
   expand,
-  playTotalSec,
-  validateProgram,
-  validateHtmlProgramSteps,
-  collectMissingHtmlProgramScreens,
   missingPublishScreensMessage,
+  missingPublishVideosMessage,
+  presentProgram,
+  presentVideoRow,
+  programDeleteBlockedMessage,
   type Program as SharedProgram,
   type PublishedSnapshot,
-  type Video,
+  type SkinPublishMeta,
   type VideoMap,
+  validateHtmlProgramSteps,
+  validateProgram,
 } from "@mvn/shared";
 import { resolveProgramSkin } from "./audio-resolve";
-import {
-  currentHtmlScreenVersions,
-  freezeHtmlSkinScreens,
-  snapshotScreenVersions,
-} from "./html-skin-publish";
-import {
-  draftRepublishContentDiffPaths,
-  pickScreenVersionsForItems,
-  republishSkinTokensDiffPaths,
-  screenVersionsDiffPaths,
-} from "./program-republish";
+import { currentHtmlScreenVersions, freezeHtmlSkinScreens } from "./html-skin-publish";
 import { AuthGuard } from "./auth.guard";
 import { PrismaService } from "./prisma.service";
-
-function presentVideo(row: {
-  id: string;
-  name: string;
-  url: string;
-  durationSec: number;
-  thumbnailUrl: string;
-  width: number;
-  height: number;
-}): Video {
-  return {
-    id: row.id,
-    name: row.name,
-    url: row.url,
-    durationSec: row.durationSec,
-    thumbnailUrl: row.thumbnailUrl,
-    width: row.width,
-    height: row.height,
-  };
-}
 
 async function freezeVideos(prisma: PrismaService, items: SharedProgram["items"]): Promise<VideoMap> {
   const refs = collectVideoRefs(items);
   if (!refs.length) return {};
   const ids = [...new Set(refs.map((ref) => ref.videoId))];
   const rows = await prisma.video.findMany({ where: { id: { in: ids } } });
-  const byId = new Map(rows.map((row) => [row.id, presentVideo(row)]));
+  const byId = new Map(rows.map((row) => [row.id, presentVideoRow(row)]));
   const missing = refs.filter((ref) => !byId.has(ref.videoId));
   if (missing.length) {
     const detail = missing.map((ref) => `${ref.path}(videoId=${ref.videoId})`).join(", ");
@@ -115,61 +84,6 @@ async function asDraft(
   }
 }
 
-type PresentedProgram = SharedProgram & {
-  totals: { seconds: number; stepCount: number };
-  needsRepublish: boolean;
-  republishDiff?: string[];
-};
-
-type SkinPublishMeta = {
-  tokens?: Record<string, unknown> | null;
-  kind?: string | null;
-  screenVersions?: Record<string, number> | null;
-};
-
-function present(
-  row: { id: string; name: string; status: string; draft: unknown; draftUpdatedAt: Date; publishedVersion: number | null },
-  publishedSnapshot?: { items: unknown; skin: unknown } | null,
-  skinMeta?: SkinPublishMeta | null,
-): PresentedProgram {
-  const draft = row.draft as { items: SharedProgram["items"]; skin: SharedProgram["skin"] };
-  const program: SharedProgram = {
-    id: row.id,
-    name: row.name,
-    status: row.status === "published" ? "published" : "draft",
-    draftUpdatedAt: row.draftUpdatedAt.toISOString(),
-    publishedVersion: row.publishedVersion,
-    skin: draft.skin,
-    items: draft.items,
-  };
-  const play = expand(program);
-  const republishDiff: string[] = [];
-  const pubSnap = publishedSnapshot as { items: typeof draft.items; skin: typeof draft.skin } | null | undefined;
-  const canCompare = row.publishedVersion != null && pubSnap != null;
-  if (canCompare) {
-    republishDiff.push(...draftRepublishContentDiffPaths(draft, pubSnap));
-    const pubSkin = pubSnap.skin as {
-      tokens?: Record<string, unknown>;
-      screens?: Record<string, { version?: number }>;
-    };
-    republishDiff.push(
-      ...republishSkinTokensDiffPaths(skinMeta?.kind ?? draft.skin.kind, skinMeta?.tokens, pubSkin?.tokens),
-    );
-    if (skinMeta?.kind === "html") {
-      const pubVersions = snapshotScreenVersions(pubSkin?.screens as never);
-      const currentVersions = pickScreenVersionsForItems(skinMeta.screenVersions ?? {}, draft.items);
-      republishDiff.push(...screenVersionsDiffPaths(currentVersions, pubVersions));
-    }
-  }
-  const needsRepublish = canCompare && republishDiff.length > 0;
-  return {
-    ...program,
-    totals: { seconds: playTotalSec(play), stepCount: play.length },
-    needsRepublish,
-    ...(needsRepublish ? { republishDiff } : {}),
-  };
-}
-
 @Controller("admin/v1/programs")
 @UseGuards(AuthGuard)
 export class ProgramsController {
@@ -209,7 +123,7 @@ export class ProgramsController {
       items: rows.map((r) => {
         const skinSlug = (r.draft as { skin?: { id?: string } })?.skin?.id;
         const skinMeta = skinSlug ? skinMetaMap.get(skinSlug) ?? null : null;
-        return present(r, snapshotMap.get(r.id), skinMeta);
+        return presentProgram(r, snapshotMap.get(r.id), skinMeta);
       }),
     };
   }
@@ -230,14 +144,14 @@ export class ProgramsController {
     const row = await this.prisma.program.create({
       data: { name, status: "draft", draft: JSON.parse(JSON.stringify(draft)), draftUpdatedAt: new Date() },
     });
-    return present(row, null);
+    return presentProgram(row, null);
   }
 
   @Get(":id")
   async detail(@Param("id") id: string) {
     const row = await this.load(id);
     const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
-    return present(row, published, await this.skinMetaForDraft(row.draft));
+    return presentProgram(row, published, await this.skinMetaForDraft(row.draft));
   }
 
   @Put(":id")
@@ -261,7 +175,7 @@ export class ProgramsController {
       },
     });
     const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
-    return present(row, published, await this.skinMetaForDraft(row.draft));
+    return presentProgram(row, published, await this.skinMetaForDraft(row.draft));
   }
 
   @Post(":id/publish")
@@ -326,7 +240,7 @@ export class ProgramsController {
     });
     const row = await this.load(id);
     const published = await this.getPublishedSnapshot(row.id, row.publishedVersion);
-    return present(row, published);
+    return presentProgram(row, published);
   }
 
   @Get(":id/versions")

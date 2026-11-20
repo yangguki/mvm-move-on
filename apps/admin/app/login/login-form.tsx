@@ -3,23 +3,27 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Eye, EyeOff, Mail } from "lucide-react";
-import { ApiError, api, getToken, setToken } from "@/lib/api";
+import { ApiError, api, isAuthenticated, setCloudSession, setToken } from "@/lib/api";
+import { isCloudDataMode } from "@/lib/data-mode";
 
 export function LoginForm() {
   const router = useRouter();
+  const cloud = isCloudDataMode();
   const [showPassword, setShowPassword] = useState(false);
   const [keep, setKeep] = useState(true);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    if (getToken()) router.replace("/");
+    if (isAuthenticated()) router.replace("/");
   }, [router]);
 
   return (
     <div className="form-wrap">
       <h1>관리자 로그인</h1>
-      <p>본사 또는 지점 관리자 계정으로 로그인해 주세요.</p>
+      <p>
+        {cloud ? "클라우드 관리 비밀번호로 로그인해 주세요." : "본사 또는 지점 관리자 계정으로 로그인해 주세요."}
+      </p>
       <form
         className="form"
         onSubmit={async (event) => {
@@ -28,11 +32,15 @@ export function LoginForm() {
           setPending(true);
           setError("");
           try {
+            const body = cloud
+              ? { password: String(form.get("password") ?? "") }
+              : { email: form.get("email"), password: form.get("password") };
             const result = await api<{ accessToken: string }>("/admin/v1/auth/login", {
               method: "POST",
-              body: JSON.stringify({ email: form.get("email"), password: form.get("password") }),
+              body: JSON.stringify(body),
             });
-            setToken(result.accessToken, keep);
+            if (cloud) setCloudSession(keep);
+            else setToken(result.accessToken, keep);
             router.push("/");
           } catch (caught) {
             setError(caught instanceof ApiError ? caught.message : "로그인에 실패했어요");
@@ -40,21 +48,31 @@ export function LoginForm() {
           }
         }}
       >
-        <div className="field">
-          <label className="label" htmlFor="email">이메일</label>
-          <input
-            id="email"
-            className="input input-lg"
-            type="email"
-            name="email"
-            autoComplete="username"
-            defaultValue="inkuk.yang@mvmfit.kr"
-          />
-        </div>
+        {!cloud ? (
+          <div className="field">
+            <label className="label" htmlFor="email">
+              이메일
+            </label>
+            <input
+              id="email"
+              className="input input-lg"
+              type="email"
+              name="email"
+              autoComplete="username"
+              defaultValue="inkuk.yang@mvmfit.kr"
+            />
+          </div>
+        ) : null}
         <div className="field">
           <div className="between">
-            <label className="label" htmlFor="password">비밀번호</label>
-            <button type="button" className="link">비밀번호를 잊으셨나요?</button>
+            <label className="label" htmlFor="password">
+              비밀번호
+            </label>
+            {!cloud ? (
+              <button type="button" className="link">
+                비밀번호를 잊으셨나요?
+              </button>
+            ) : null}
           </div>
           <div className="pw">
             <input
@@ -63,7 +81,7 @@ export function LoginForm() {
               type={showPassword ? "text" : "password"}
               name="password"
               autoComplete="current-password"
-              defaultValue="password"
+              defaultValue={cloud ? "" : "password"}
               style={{ letterSpacing: showPassword ? undefined : "2px" }}
             />
             <button
@@ -88,11 +106,15 @@ export function LoginForm() {
           {pending ? "확인하는 중이에요" : "로그인"}
           <ArrowRight className="i" aria-hidden />
         </button>
-        <div className="or">또는</div>
-        <button className="btn btn-secondary btn-lg submit" type="button">
-          <Mail className="i" aria-hidden />
-          초대 메일로 계정 만들기
-        </button>
+        {!cloud ? (
+          <>
+            <div className="or">또는</div>
+            <button className="btn btn-secondary btn-lg submit" type="button">
+              <Mail className="i" aria-hidden />
+              초대 메일로 계정 만들기
+            </button>
+          </>
+        ) : null}
       </form>
     </div>
   );

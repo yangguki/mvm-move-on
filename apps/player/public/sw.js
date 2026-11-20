@@ -1,5 +1,7 @@
 const CACHE_NAME = "mvn-player-v1";
-const SHELL_FILES = ["/", "/index.html", "/src/main.ts"];
+const scopePath = new URL(self.registration.scope).pathname;
+const base = scopePath.endsWith("/") ? scopePath : `${scopePath}/`;
+const SHELL_FILES = [base, `${base}index.html`];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -19,7 +21,7 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith("/player/")) {
+  if (url.pathname.includes("/api/") || url.pathname.includes("/player/v1/")) {
     return;
   }
   event.respondWith(

@@ -4,7 +4,7 @@ import {
   programNamesUsingScreen,
   screenDeleteBlockedMessage,
   snapshotUsesScreen,
-} from "../src/skin-screen-usage.ts";
+} from "../../../packages/shared/dist/index.js";
 
 describe("snapshotUsesScreen", () => {
   it("detects screenId on draft items", () => {

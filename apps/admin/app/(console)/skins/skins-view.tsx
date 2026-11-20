@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { skinDetailPath } from "@/lib/admin-paths";
 import { api, ApiError } from "@/lib/api";
 import { Plus } from "lucide-react";
 import { SkinCardThumbnail, type SkinPreviewScreen } from "./skin-card-thumbnail";
@@ -65,7 +66,7 @@ export function SkinsView() {
         {skins.map((skin) => (
           <Link
             key={skin.id}
-            href={`/skins/${skin.id}`}
+            href={skinDetailPath(skin.id)}
             className="tpl"
             style={{
               textDecoration: "none",

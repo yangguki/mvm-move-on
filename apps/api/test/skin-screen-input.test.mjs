@@ -11,7 +11,7 @@ import {
   resolveSlotFlagsForUpdate,
   SkinScreenInputError,
   slotFlagsFromType,
-} from "../src/skin-screen-input.ts";
+} from "../../../packages/shared/dist/index.js";
 
 describe("parseDefaultDurationSecForCreate", () => {
   it("accepts null and undefined as null", () => {

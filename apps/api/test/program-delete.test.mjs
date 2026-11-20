@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { programDeleteBlockedMessage } from "../src/program-delete.ts";
+import { programDeleteBlockedMessage } from "../../../packages/shared/dist/index.js";
 
 describe("programDeleteBlockedMessage", () => {
   it("allows delete when no store is assigned", () => {

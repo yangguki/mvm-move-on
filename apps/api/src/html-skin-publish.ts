@@ -1,36 +1,13 @@
 import {
-  assertHtmlSkinContentSize,
+  buildHtmlSkinScreensMap,
   collectScreenIds,
-  HTML_SKIN_CONTENT_MAX_BYTES,
-  sanitizeHtmlSkinContent,
+  resolveHtmlPublishScreenIds,
   type HtmlSkinScreensMap,
   type ProgramItem,
-  type SkinScreenSnapshot,
 } from "@mvn/shared";
 import type { PrismaService } from "./prisma.service";
 
-function presentScreen(row: {
-  id: string;
-  title: string;
-  html: string;
-  css: string;
-  hasVideoSlot: boolean;
-  hasNextVideoSlot: boolean;
-  titleOnly: boolean;
-  version: number;
-}): SkinScreenSnapshot {
-  const { html, css } = sanitizeHtmlSkinContent(row.html, row.css);
-  return {
-    id: row.id,
-    title: row.title,
-    html,
-    css,
-    hasVideoSlot: row.hasVideoSlot,
-    hasNextVideoSlot: row.hasNextVideoSlot,
-    titleOnly: row.titleOnly,
-    version: row.version,
-  };
-}
+export { snapshotScreenVersions } from "@mvn/shared";
 
 export async function freezeHtmlSkinScreens(
   prisma: PrismaService,
@@ -42,25 +19,9 @@ export async function freezeHtmlSkinScreens(
     where: { skinId },
     orderBy: { sortOrder: "asc" },
   });
-  const usedIds = new Set(screenIds);
-  if (usedIds.size === 0 && allScreens.length > 0) {
-    const fallback = allScreens.find((s) => s.hasVideoSlot) ?? allScreens[0];
-    if (fallback) usedIds.add(fallback.id);
-  }
+  const usedIds = resolveHtmlPublishScreenIds(screenIds, allScreens);
   const rows = allScreens.filter((s) => usedIds.has(s.id));
-  const map: HtmlSkinScreensMap = {};
-  for (const row of rows) {
-    assertHtmlSkinContentSize(row.html, row.css, HTML_SKIN_CONTENT_MAX_BYTES);
-    map[row.id] = presentScreen(row);
-  }
-  return map;
-}
-
-export function snapshotScreenVersions(map: HtmlSkinScreensMap | undefined): Record<string, number> {
-  if (!map) return {};
-  const out: Record<string, number> = {};
-  for (const [id, screen] of Object.entries(map)) out[id] = screen.version;
-  return out;
+  return buildHtmlSkinScreensMap(rows);
 }
 
 export async function currentHtmlScreenVersions(prisma: PrismaService, skinUuid: string): Promise<Record<string, number>> {

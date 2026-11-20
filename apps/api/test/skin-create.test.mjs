@@ -5,7 +5,7 @@ import {
   parseSkinCreateBody,
   SkinCreateBodyError,
   SKIN_NAME_MAX_LENGTH,
-} from "../src/skin-create.ts";
+} from "../../../packages/shared/dist/index.js";
 
 describe("parseSkinCreateBody", () => {
   it("defaults to html kind for name-only body", () => {
