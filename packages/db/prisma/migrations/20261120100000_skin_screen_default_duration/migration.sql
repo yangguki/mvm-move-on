@@ -1,0 +1,1 @@
+ALTER TABLE "skin_screens" ADD COLUMN "default_duration_sec" INTEGER;

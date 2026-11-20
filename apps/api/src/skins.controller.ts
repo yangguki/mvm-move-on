@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { AuthGuard } from "./auth.guard";
+import { findFreeSlug, parseSkinCreateBody, SKIN_NAME_MAX_LENGTH, SkinCreateBodyError } from "./skin-create";
 import { PrismaService } from "./prisma.service";
 
 type SkinTokens = {
@@ -68,14 +69,49 @@ export class SkinsController {
   async list() {
     const rows = await this.prisma.skin.findMany({
       orderBy: [{ isBuiltin: "desc" }, { name: "asc" }],
-      include: { _count: { select: { devices: true, screens: true } } },
+      include: {
+        _count: { select: { devices: true, screens: true } },
+        screens: {
+          orderBy: { sortOrder: "asc" },
+          take: 1,
+          select: {
+            id: true,
+            title: true,
+            html: true,
+            css: true,
+            hasVideoSlot: true,
+            hasNextVideoSlot: true,
+            titleOnly: true,
+            version: true,
+          },
+        },
+      },
     });
     const programUsage = await this.buildProgramUsageMap();
     return {
-      items: rows.map((row) => ({
-        ...present({ ...row, screenCount: row._count.screens }),
-        usedInPrograms: programUsage.get(row.slug) || [],
-      })),
+      items: rows.map((row) => {
+        const programs = programUsage.get(row.slug) || [];
+        const first = row.screens[0];
+        const previewScreen =
+          row.kind === "html" && first
+            ? {
+                id: first.id,
+                title: first.title,
+                html: first.html,
+                css: first.css,
+                hasVideoSlot: first.hasVideoSlot,
+                hasNextVideoSlot: first.hasNextVideoSlot,
+                titleOnly: first.titleOnly,
+                version: first.version,
+              }
+            : null;
+        return {
+          ...present({ ...row, screenCount: row._count.screens }),
+          usedInPrograms: programs,
+          programCount: programs.length,
+          previewScreen,
+        };
+      }),
     };
   }
 
@@ -95,12 +131,32 @@ export class SkinsController {
 
   @Post()
   async create(@Body() body: unknown) {
-    const input = this.parseBody(body);
-    const existing = await this.prisma.skin.findUnique({ where: { slug: input.slug } });
-    if (existing) throw new BadRequestException("이미 같은 slug의 스킨이 있어요");
+    let input;
+    try {
+      input = parseSkinCreateBody(body);
+    } catch (error) {
+      if (error instanceof SkinCreateBodyError) throw new BadRequestException(error.message);
+      throw error;
+    }
+    const slugTaken = async (candidate: string) =>
+      !!(await this.prisma.skin.findUnique({ where: { slug: candidate } }));
+    let slug = input.slug;
+    if (input.slugWasExplicit) {
+      if (await slugTaken(slug)) throw new BadRequestException("이미 같은 slug의 스킨이 있어요");
+    } else {
+      const occupied = new Set<string>();
+      while (true) {
+        const candidate = findFreeSlug(input.slug, (s) => occupied.has(s));
+        if (!(await slugTaken(candidate))) {
+          slug = candidate;
+          break;
+        }
+        occupied.add(candidate);
+      }
+    }
     const row = await this.prisma.skin.create({
       data: {
-        slug: input.slug,
+        slug,
         name: input.name,
         description: input.description,
         tone: input.tone || "linear-gradient(135deg,#333,#666)",
@@ -123,7 +179,15 @@ export class SkinsController {
     if (!current) throw new NotFoundException("스킨을 찾을 수 없어요");
     const raw = body as Record<string, unknown>;
     const data: Record<string, unknown> = {};
-    if (typeof raw.name === "string") data.name = raw.name.trim();
+    if (typeof raw.name === "string") {
+      const name = raw.name.trim();
+      if (!name) throw new BadRequestException("name이 필요해요");
+      if (name.length > SKIN_NAME_MAX_LENGTH) {
+        throw new BadRequestException(`name은 ${SKIN_NAME_MAX_LENGTH}자 이하여야 해요`);
+      }
+      data.name = name;
+    }
+    if (Object.keys(data).length === 0) throw new BadRequestException("변경할 항목이 없어요");
     if (typeof raw.description === "string") data.description = raw.description.trim() || null;
     if (typeof raw.tone === "string") data.tone = raw.tone;
     if (typeof raw.thumbnailUrl === "string") data.thumbnailUrl = raw.thumbnailUrl || null;
@@ -157,32 +221,6 @@ export class SkinsController {
     }
     await this.prisma.skin.delete({ where: { id: current.id } });
     return { ok: true };
-  }
-
-  private parseBody(body: unknown) {
-    if (!body || typeof body !== "object") throw new BadRequestException("본문이 필요해요");
-    const raw = body as Record<string, unknown>;
-    const kind = raw.kind === "html" ? "html" : "tokens";
-    const name = typeof raw.name === "string" ? raw.name.trim() : "";
-    if (!name) throw new BadRequestException("name이 필요해요");
-    let slug = typeof raw.slug === "string" ? raw.slug.trim().toLowerCase().replace(/\s+/g, "-") : "";
-    if (!slug) {
-      const base = name
-        .toLowerCase()
-        .replace(/\s+/g, "-")
-        .replace(/[^a-z0-9-]/g, "");
-      slug = base || `html-skin-${Date.now()}`;
-    }
-    if (kind === "tokens" && !slug) throw new BadRequestException("slug가 필요해요");
-    return {
-      kind,
-      slug,
-      name,
-      description: typeof raw.description === "string" ? raw.description.trim() || null : null,
-      tone: typeof raw.tone === "string" ? raw.tone : null,
-      thumbnailUrl: typeof raw.thumbnailUrl === "string" ? raw.thumbnailUrl || null : null,
-      tokens: raw.tokens && typeof raw.tokens === "object" ? raw.tokens : null,
-    };
   }
 
   private async findSkinUsage(skinSlug: string): Promise<string[]> {

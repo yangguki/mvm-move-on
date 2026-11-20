@@ -90,6 +90,7 @@ model SkinScreen {
   hasVideoSlot     Boolean  @default(false) @map("has_video_slot")
   hasNextVideoSlot Boolean  @default(false) @map("has_next_video_slot")
   titleOnly        Boolean  @default(false) @map("title_only")
+  defaultDurationSec Int?   @map("default_duration_sec")
   sortOrder        Int      @default(0) @map("sort_order")
   version          Int      @default(1)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
