@@ -26,8 +26,15 @@ import {
 } from "lucide-react";
 import {
   buildHtmlSkinStepPreviewDocument,
+  clampRepeatCount,
+  clampStepDurationSec,
+  computeVideoStepDurationSec,
   expand,
+  inferVideoStepRepeatCount,
   playTotalSec,
+  resolveDefaultVideoStepRepeatCount,
+  resolveVideoStepDurationSec,
+  resolveVideoStepTimingOnScreenChange,
   type HtmlSkinTokenMap,
   type Program as SharedProgram,
   type ProgramItem,
@@ -42,8 +49,10 @@ type Step = {
   label: string;
   subtitle: string | null;
   seconds: number;
+  repeatCount?: number;
   videoId: string | null;
   screenId: string | null;
+  durationUserEdited?: boolean;
   groupKey: string | null;
   groupLabel: string | null;
   groupRepeat: number | null;
@@ -62,6 +71,7 @@ type SkinScreenListItem = {
   hasVideoSlot: boolean;
   hasNextVideoSlot: boolean;
   titleOnly: boolean;
+  defaultDurationSec?: number | null;
 };
 
 type Block =
@@ -96,6 +106,7 @@ function fromShared(program: SharedProgram): Step[] {
           label: step.label ?? "",
           subtitle: step.text ?? null,
           seconds: step.durationSec,
+          repeatCount: step.repeatCount,
           videoId: step.videoId ?? null,
           screenId: step.screenId ?? null,
           groupKey: item.id,
@@ -109,6 +120,7 @@ function fromShared(program: SharedProgram): Step[] {
         label: item.label ?? "",
         subtitle: item.text ?? null,
         seconds: item.durationSec,
+        repeatCount: item.repeatCount,
         videoId: item.videoId ?? null,
         screenId: item.screenId ?? null,
         groupKey: null,
@@ -202,6 +214,75 @@ function missingVideoStepsMessage(steps: Step[], indexes: number[]): string {
   return `영상이 필요한 단계에 영상이 없어요: ${detail}`;
 }
 
+function stepScreenMissing(step: Step, screens: SkinScreenListItem[]): boolean {
+  const screenId = step.screenId?.trim();
+  if (!screenId) return false;
+  return !screens.some((screen) => screen.id === screenId);
+}
+
+function stepVideoMissing(step: Step, screens: SkinScreenListItem[]): boolean {
+  if (stepScreenMissing(step, screens)) return false;
+  const screenId = step.screenId?.trim();
+  if (!screenId) return false;
+  const screen = screens.find((item) => item.id === screenId);
+  return !!screen?.hasVideoSlot && !step.videoId?.trim();
+}
+
+function findMissingScreenStepIndexes(steps: Step[], screens: SkinScreenListItem[]): number[] {
+  const indexes: number[] = [];
+  steps.forEach((step, index) => {
+    if (stepScreenMissing(step, screens)) indexes.push(index);
+  });
+  return indexes;
+}
+
+function missingScreenStepsMessage(indexes: number[]): string {
+  const numbers = indexes.map((index) => index + 1).join(", ");
+  return `삭제된 화면을 쓰는 단계가 있어요: ${numbers}단계. 다른 화면을 골라 주세요.`;
+}
+
+function stepUsesVideoRepeat(
+  step: Step,
+  opts: { isHtmlSkin: boolean; screen?: SkinScreenListItem; video?: VideoItem },
+): boolean {
+  const isVideoStep = opts.isHtmlSkin ? !!opts.screen?.hasVideoSlot : step.kind === "exercise";
+  return isVideoStep && !!opts.video && opts.video.durationSec > 0;
+}
+
+export function builderStepToShared(
+  step: Step,
+  index: number,
+  opts: { isHtmlSkin: boolean; screens: SkinScreenListItem[]; videos: VideoItem[] },
+): SharedStep {
+  const screen = step.screenId ? opts.screens.find((s) => s.id === step.screenId) : undefined;
+  const video = step.videoId ? opts.videos.find((v) => v.id === step.videoId) : undefined;
+  const sharedType = toSharedType(step.kind);
+  const hasVideoSlot = opts.isHtmlSkin ? !!screen?.hasVideoSlot : step.kind === "exercise";
+  let durationSec = clampStepDurationSec(step.seconds);
+  let repeatCount: number | undefined;
+  if (hasVideoSlot && video && video.durationSec > 0) {
+    repeatCount = inferVideoStepRepeatCount({
+      repeatCount: step.repeatCount,
+      durationSec: step.seconds,
+      videoDurationSec: video.durationSec,
+    });
+    durationSec = computeVideoStepDurationSec(repeatCount, video.durationSec);
+  } else if (sharedType === "exercise" && step.repeatCount != null) {
+    repeatCount = clampRepeatCount(step.repeatCount);
+  }
+  const out: SharedStep = {
+    id: `step-${index}`,
+    type: sharedType,
+    durationSec,
+    label: step.label,
+    text: step.subtitle ?? undefined,
+    videoId: step.videoId ?? undefined,
+    screenId: step.screenId ?? undefined,
+  };
+  if (sharedType === "exercise" && repeatCount != null) out.repeatCount = repeatCount;
+  return out;
+}
+
 function toSharedProgram(input: {
   id: string;
   name: string;
@@ -211,21 +292,21 @@ function toSharedProgram(input: {
   steps: Step[];
   skinSlug?: string;
   skinKind?: string;
+  isHtmlSkin?: boolean;
+  screens?: SkinScreenListItem[];
+  videos?: VideoItem[];
 }): SharedProgram {
+  const publishOpts = {
+    isHtmlSkin: !!input.isHtmlSkin,
+    screens: input.screens ?? [],
+    videos: input.videos ?? [],
+  };
   const items: ProgramItem[] = [];
   let index = 0;
   while (index < input.steps.length) {
     const step = input.steps[index];
     if (!step.groupKey) {
-      items.push({
-        id: `step-${index}`,
-        type: toSharedType(step.kind),
-        durationSec: step.seconds,
-        label: step.label,
-        text: step.subtitle ?? undefined,
-        videoId: step.videoId ?? undefined,
-        screenId: step.screenId ?? undefined,
-      });
+      items.push(builderStepToShared(step, index, publishOpts));
       index += 1;
       continue;
     }
@@ -234,15 +315,7 @@ function toSharedProgram(input: {
     const start = index;
     while (index < input.steps.length && input.steps[index].groupKey === key) {
       const member = input.steps[index];
-      groupSteps.push({
-        id: `step-${index}`,
-        type: toSharedType(member.kind),
-        durationSec: member.seconds,
-        label: member.label,
-        text: member.subtitle ?? undefined,
-        videoId: member.videoId ?? undefined,
-        screenId: member.screenId ?? undefined,
-      });
+      groupSteps.push(builderStepToShared(member, index, publishOpts));
       index += 1;
     }
     items.push({
@@ -313,10 +386,12 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
   const stepRemainRef = useRef<number | null>(null);
   const selectedRef = useRef(0);
   const stepsRef = useRef<Step[]>([]);
+  const nameDefaultUntouched = useRef(false);
 
   function remember(program: Program) {
     setProgramId(program.id);
     setName(program.name);
+    nameDefaultUntouched.current = program.name === "새 프로그램";
     setSkinOptions(program.skin.options);
     setSelectedSkinSlug(program.skin.id || "neon-arcade");
     setPublished(program.publishedVersion);
@@ -381,7 +456,7 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
     };
   }, [selectedSkin]);
 
-  // HTML 스킨: screenId 누락/다른 스킨 id면 기본 화면으로 채워 autosave 400 방지
+  // HTML 스킨: screenId가 비었을 때만 기본 화면으로 채움 (삭제된 화면 id는 유지)
   useEffect(() => {
     if (!isHtmlSkin || !skinScreens.length) return;
     const fallback =
@@ -392,8 +467,7 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
     setSteps((current) => {
       let changed = false;
       const next = current.map((step) => {
-        const stillValid = step.screenId != null && skinScreens.some((screen) => screen.id === step.screenId);
-        if (stillValid) return step;
+        if (step.screenId != null && step.screenId.trim() !== "") return step;
         changed = true;
         const preferred =
           step.kind === "rest"
@@ -403,16 +477,20 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
             : step.kind === "countdown"
               ? (skinScreens.find((screen) => screen.titleOnly) ?? fallback)
               : (skinScreens.find((screen) => screen.hasVideoSlot) ?? fallback);
+        const video = step.videoId ? videos.find((item) => item.id === step.videoId) : undefined;
+        const timing = timingForScreenChange(step, preferred, "auto_assign_screen", video);
         return {
           ...step,
           screenId: preferred.id,
           kind: stepKindFromScreen(preferred),
           label: step.label || preferred.title,
+          seconds: timing.durationSec,
+          repeatCount: timing.repeatCount,
         };
       });
       return changed ? next : current;
     });
-  }, [isHtmlSkin, skinScreens]);
+  }, [isHtmlSkin, skinScreens, videos]);
 
   function persist(nextSteps: Step[], nextName = name, nextSkin = skinOptions, nextSkinSlug = selectedSkinSlug) {
     if (!programId) return Promise.resolve(undefined);
@@ -426,6 +504,9 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
       steps: nextSteps,
       skinSlug: nextSkinSlug,
       skinKind: skinRow?.kind === "html" || skinRow?.kind === "tokens" ? skinRow.kind : undefined,
+      isHtmlSkin,
+      screens: skinScreens,
+      videos,
     });
     draftProgram.skin.options = nextSkin;
     const run = saveChain.current.then(async () => {
@@ -586,7 +667,61 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
   }, []);
 
   function update(index: number, patch: Partial<Step>) {
-    setSteps((current) => current.map((step, stepIndex) => (stepIndex === index ? { ...step, ...patch } : step)));
+    const normalized = { ...patch };
+    if (normalized.repeatCount != null) {
+      normalized.repeatCount = clampRepeatCount(normalized.repeatCount);
+      if (normalized.durationUserEdited !== false) normalized.durationUserEdited = true;
+    }
+    if (normalized.seconds != null) {
+      normalized.seconds = clampStepDurationSec(normalized.seconds);
+      if (normalized.durationUserEdited !== false) normalized.durationUserEdited = true;
+    }
+    setSteps((current) => current.map((step, stepIndex) => (stepIndex === index ? { ...step, ...normalized } : step)));
+  }
+
+  function timingForScreenChange(
+    step: Step,
+    screen: SkinScreenListItem | undefined,
+    reason: "user_picked_screen" | "auto_assign_screen",
+    video?: VideoItem,
+  ) {
+    const hasVideoSlot = isHtmlSkin ? !!screen?.hasVideoSlot : step.kind === "exercise";
+    return resolveVideoStepTimingOnScreenChange({
+      reason,
+      currentDurationSec: step.seconds,
+      currentRepeatCount: step.repeatCount,
+      durationUserEdited: step.durationUserEdited,
+      screenDefaultDurationSec: screen?.defaultDurationSec,
+      hasVideoSlot,
+      videoDurationSec: video?.durationSec,
+    });
+  }
+
+  function defaultVideoStepTiming(screen: SkinScreenListItem | undefined, video?: VideoItem) {
+    if (video?.durationSec && video.durationSec > 0) {
+      const repeatCount = resolveDefaultVideoStepRepeatCount({
+        screenDefaultDurationSec: screen?.defaultDurationSec,
+        videoDurationSec: video.durationSec,
+      });
+      return { repeatCount, durationSec: computeVideoStepDurationSec(repeatCount, video.durationSec) };
+    }
+    return {
+      repeatCount: 1,
+      durationSec: resolveVideoStepDurationSec({
+        screenDefaultDurationSec: screen?.defaultDurationSec,
+        videoDurationSec: video?.durationSec,
+        fallbackSec: 45,
+      }),
+    };
+  }
+
+  function patchRepeatCount(repeatCount: number, video?: VideoItem): Partial<Step> {
+    const rc = clampRepeatCount(repeatCount);
+    const patch: Partial<Step> = { repeatCount: rc, durationUserEdited: true };
+    if (video?.durationSec && video.durationSec > 0) {
+      patch.seconds = computeVideoStepDurationSec(rc, video.durationSec);
+    }
+    return patch;
   }
 
   function updateGroup(key: string, patch: { groupLabel?: string; groupRepeat?: number }) {
@@ -629,14 +764,23 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
   function addStep() {
     setSteps((current) => {
       const screen = isHtmlSkin ? defaultScreenForStep() : undefined;
+      const firstVideo = videos[0];
+      const timing =
+        screen?.hasVideoSlot || !isHtmlSkin
+          ? defaultVideoStepTiming(screen, firstVideo)
+          : {
+              repeatCount: 1,
+              durationSec: resolveVideoStepDurationSec({ screenDefaultDurationSec: screen?.defaultDurationSec, fallbackSec: 45 }),
+            };
       const next = [
         ...current,
         {
           kind: isHtmlSkin ? stepKindFromScreen(screen) : ("exercise" as const),
           label: screen?.title ?? "새 운동",
           subtitle: isHtmlSkin ? null : "운동",
-          seconds: screen?.hasVideoSlot && videos[0] ? videos[0].durationSec : 45,
-          videoId: isHtmlSkin ? (screen?.hasVideoSlot ? videos[0]?.id ?? null : null) : videos[0]?.id ?? null,
+          seconds: timing.durationSec,
+          repeatCount: timing.repeatCount,
+          videoId: isHtmlSkin ? (screen?.hasVideoSlot ? firstVideo?.id ?? null : null) : firstVideo?.id ?? null,
           screenId: screen?.id ?? null,
           groupKey: null,
           groupLabel: null,
@@ -720,10 +864,23 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
     setError("");
     setNotice("");
 
-    const missingIndexes = findMissingVideoStepIndexes(steps, { isHtmlSkin, screens: skinScreens });
-    if (missingIndexes.length) {
-      setSelected(missingIndexes[0]);
-      setError(missingVideoStepsMessage(steps, missingIndexes));
+    const publishErrors: string[] = [];
+    let firstBadIndex: number | undefined;
+    if (isHtmlSkin) {
+      const missingScreenIndexes = findMissingScreenStepIndexes(steps, skinScreens);
+      if (missingScreenIndexes.length) {
+        publishErrors.push(missingScreenStepsMessage(missingScreenIndexes));
+        firstBadIndex = missingScreenIndexes[0];
+      }
+    }
+    const missingVideoIndexes = findMissingVideoStepIndexes(steps, { isHtmlSkin, screens: skinScreens });
+    if (missingVideoIndexes.length) {
+      publishErrors.push(missingVideoStepsMessage(steps, missingVideoIndexes));
+      if (firstBadIndex === undefined) firstBadIndex = missingVideoIndexes[0];
+    }
+    if (publishErrors.length) {
+      if (firstBadIndex !== undefined) setSelected(firstBadIndex);
+      setError(publishErrors.join(" "));
       return;
     }
 
@@ -828,7 +985,20 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
     () => (current?.screenId ? skinScreens.find((s) => s.id === current.screenId) : undefined),
     [current?.screenId, skinScreens],
   );
+  const currentScreenMissing = isHtmlSkin && !!current && stepScreenMissing(current, skinScreens);
+  const currentVideoMissing = isHtmlSkin && !!current && stepVideoMissing(current, skinScreens);
   const showExerciseVideo = isHtmlSkin ? !!currentScreen?.hasVideoSlot : current?.kind === "exercise";
+  const pickedVideo = current?.videoId ? videos.find((video) => video.id === current.videoId) : undefined;
+  const useRepeatCountInput =
+    !!current && stepUsesVideoRepeat(current, { isHtmlSkin, screen: currentScreen, video: pickedVideo });
+  const displayRepeatCount =
+    useRepeatCountInput && pickedVideo
+      ? inferVideoStepRepeatCount({
+          repeatCount: current.repeatCount,
+          durationSec: current.seconds,
+          videoDurationSec: pickedVideo.durationSec,
+        })
+      : null;
   const sharedProgram = useMemo(() => {
     const program = toSharedProgram({
       id: programId,
@@ -839,6 +1009,9 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
       steps,
       skinSlug: selectedSkinSlug,
       skinKind: selectedSkin?.kind === "html" || selectedSkin?.kind === "tokens" ? selectedSkin.kind : undefined,
+      isHtmlSkin,
+      screens: skinScreens,
+      videos,
     });
     program.skin.options = skinOptions;
     const currentSkin = skins.find((s) => s.slug === selectedSkinSlug);
@@ -846,7 +1019,7 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
       (program.skin as { tokens?: Record<string, unknown> }).tokens = currentSkin.tokens;
     }
     return program;
-  }, [programId, name, status, updatedAt, published, steps, skinOptions, selectedSkinSlug, skins, selectedSkin]);
+  }, [programId, name, status, updatedAt, published, steps, skinOptions, selectedSkinSlug, skins, selectedSkin, isHtmlSkin, skinScreens, videos]);
   const videoMap = useMemo(() => Object.fromEntries(videos.map((video) => [video.id, video])), [videos]);
   const playItems = useMemo(() => expand(sharedProgram, videoMap), [sharedProgram, videoMap]);
   const total = playTotalSec(playItems);
@@ -999,6 +1172,8 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
   }
 
   function renderStepRow(step: Step, index: number) {
+    const screenMissing = isHtmlSkin && stepScreenMissing(step, skinScreens);
+    const videoMissing = isHtmlSkin && stepVideoMissing(step, skinScreens);
     const sameGroup = (a: number, b: number) =>
       a >= 0 && b >= 0 && a < steps.length && b < steps.length && (steps[a].groupKey ?? null) === (steps[b].groupKey ?? null);
     const canUp = sameGroup(index, index - 1);
@@ -1045,7 +1220,13 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
         </span>
         <div className="nm">
           <b>{step.label}</b>
-          {step.subtitle ? <small>{step.subtitle}</small> : null}
+          {screenMissing ? (
+            <small style={{ color: "var(--danger, #b91c1c)", display: "block" }}>화면 없음</small>
+          ) : videoMissing ? (
+            <small style={{ color: "var(--danger, #b91c1c)", display: "block" }}>영상 없음</small>
+          ) : step.subtitle ? (
+            <small>{step.subtitle}</small>
+          ) : null}
         </div>
         <span className="dur">{clock(step.seconds)}</span>
         <div className="ord">
@@ -1095,7 +1276,15 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
         <input
           className="title"
           value={name}
-          onChange={(event) => setName(event.target.value)}
+          onFocus={(event) => {
+            if (nameDefaultUntouched.current && name === "새 프로그램") {
+              event.currentTarget.select();
+            }
+          }}
+          onChange={(event) => {
+            nameDefaultUntouched.current = false;
+            setName(event.target.value);
+          }}
           aria-label="프로그램 이름"
           style={{ border: 0, background: "transparent", width: 180 }}
         />
@@ -1473,7 +1662,14 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
               <div className="insp-body">
                 {isHtmlSkin ? (
                   <div className="field">
-                    <span className="label">화면</span>
+                    <span className="label">
+                      화면
+                      {currentScreenMissing ? (
+                        <span className="badge badge-outline" style={{ marginLeft: 8, color: "var(--danger, #b91c1c)" }}>
+                          화면 없음
+                        </span>
+                      ) : null}
+                    </span>
                     <select
                       className="input"
                       value={current.screenId ?? ""}
@@ -1487,10 +1683,20 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
                         if (!screen?.hasVideoSlot) {
                           patch.videoId = null;
                         }
+                        if (screen) {
+                          const video = current.videoId ? videos.find((item) => item.id === current.videoId) : undefined;
+                          const timing = timingForScreenChange(current, screen, "user_picked_screen", video);
+                          patch.seconds = timing.durationSec;
+                          patch.repeatCount = timing.repeatCount;
+                          patch.durationUserEdited = false;
+                        }
                         update(selected, patch);
                       }}
                     >
                       <option value="">화면 선택</option>
+                      {currentScreenMissing && current.screenId ? (
+                        <option value={current.screenId}>화면 없음 (삭제됨)</option>
+                      ) : null}
                       {skinScreens.map((screen) => (
                         <option key={screen.id} value={screen.id}>
                           {screen.title}
@@ -1522,7 +1728,14 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
                 )}
                 {showExerciseVideo ? (
                   <div className="field">
-                    <span className="label">운동 영상</span>
+                    <span className="label">
+                      운동 영상
+                      {currentVideoMissing ? (
+                        <span className="badge badge-outline" style={{ marginLeft: 8, color: "var(--danger, #b91c1c)" }}>
+                          영상 없음
+                        </span>
+                      ) : null}
+                    </span>
                     <div className="media">
                       <span className="thumb">
                         {(() => {
@@ -1542,7 +1755,10 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
                               label: isHtmlSkin ? current.label : current.label || video?.name || "새 운동",
                             };
                             if (video) {
-                              patch.seconds = video.durationSec;
+                              const timing = defaultVideoStepTiming(currentScreen, video);
+                              patch.seconds = timing.durationSec;
+                              patch.repeatCount = timing.repeatCount;
+                              patch.durationUserEdited = false;
                             }
                             update(selected, patch);
                           }}
@@ -1557,9 +1773,47 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
                         {(() => {
                           const picked = videos.find((video) => video.id === current.videoId);
                           return picked ? (
-                            <small>
-                              영상 길이 {picked.durationSec}초 (읽기 전용) · 단계 시간 {current.seconds}초
-                            </small>
+                            <>
+                              {useRepeatCountInput && displayRepeatCount != null ? (
+                                <div className="field" style={{ marginTop: 8 }}>
+                                  <span className="label">반복 횟수</span>
+                                  <div className="stepper">
+                                    <button
+                                      type="button"
+                                      aria-label="반복 줄이기"
+                                      onClick={() => update(selected, patchRepeatCount(displayRepeatCount - 1, picked))}
+                                    >
+                                      <Minus className="i" aria-hidden />
+                                    </button>
+                                    <input
+                                      className="input"
+                                      type="number"
+                                      min={1}
+                                      max={99}
+                                      step={1}
+                                      style={{ width: 56, textAlign: "center" }}
+                                      value={displayRepeatCount}
+                                      onChange={(event) => {
+                                        const raw = Number(event.target.value);
+                                        if (Number.isFinite(raw)) update(selected, patchRepeatCount(raw, picked));
+                                      }}
+                                    />
+                                    <button
+                                      type="button"
+                                      aria-label="반복 늘리기"
+                                      onClick={() => update(selected, patchRepeatCount(displayRepeatCount + 1, picked))}
+                                    >
+                                      <Plus className="i" aria-hidden />
+                                    </button>
+                                  </div>
+                                  <small>
+                                    영상 {picked.durationSec}초 × {displayRepeatCount}회 = {current.seconds}초
+                                  </small>
+                                </div>
+                              ) : (
+                                <small>영상 길이를 알 수 없어요 · 아래에서 단계 시간을 직접 입력해 주세요</small>
+                              )}
+                            </>
                           ) : (
                             <small>URL 등록 방식 · GIF→mp4 변환은 나중에</small>
                           );
@@ -1598,37 +1852,39 @@ export function BuilderScreen({ initialId, onDeleted }: { initialId?: string; on
                     placeholder={current.kind === "rest" ? "선택" : "운동 · 12회"}
                   />
                 </div>
-                <div className="field">
-                  <span className="label">
-                    {isHtmlSkin
-                      ? currentScreen?.titleOnly
-                        ? "재생 시간"
-                        : currentScreen?.hasVideoSlot
-                          ? "재생 시간 (영상과 별도 조정 가능)"
+                {!useRepeatCountInput ? (
+                  <div className="field">
+                    <span className="label">
+                      {isHtmlSkin
+                        ? currentScreen?.titleOnly
+                          ? "재생 시간"
                           : "재생 시간"
-                      : current.kind === "rest"
-                        ? "휴식 시간"
-                        : current.kind === "countdown"
-                          ? "카운트다운"
-                          : "운동 시간"}
-                  </span>
-                  <div className="stepper">
-                    <button type="button" aria-label="5초 줄이기" onClick={() => update(selected, { seconds: Math.max(1, current.seconds - 5) })}>
-                      <Minus className="i" aria-hidden />
-                    </button>
-                    <span className="v">{current.seconds}초</span>
-                    <button type="button" aria-label="5초 늘리기" onClick={() => update(selected, { seconds: current.seconds + 5 })}>
-                      <Plus className="i" aria-hidden />
-                    </button>
-                  </div>
-                  <div className="chips">
-                    {[15, 30, 40, 45, 60, 90].map((seconds) => (
-                      <button key={seconds} type="button" className={current.seconds === seconds ? "chip on" : "chip"} onClick={() => update(selected, { seconds })}>
-                        {seconds}초
+                        : current.kind === "rest"
+                          ? "휴식 시간"
+                          : current.kind === "countdown"
+                            ? "카운트다운"
+                            : pickedVideo
+                              ? "운동 시간"
+                              : "운동 시간"}
+                    </span>
+                    <div className="stepper">
+                      <button type="button" aria-label="5초 줄이기" onClick={() => update(selected, { seconds: Math.max(1, current.seconds - 5) })}>
+                        <Minus className="i" aria-hidden />
                       </button>
-                    ))}
+                      <span className="v">{current.seconds}초</span>
+                      <button type="button" aria-label="5초 늘리기" onClick={() => update(selected, { seconds: current.seconds + 5 })}>
+                        <Plus className="i" aria-hidden />
+                      </button>
+                    </div>
+                    <div className="chips">
+                      {[15, 30, 40, 45, 60, 90].map((seconds) => (
+                        <button key={seconds} type="button" className={current.seconds === seconds ? "chip on" : "chip"} onClick={() => update(selected, { seconds })}>
+                          {seconds}초
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : null}
                 {current.groupKey ? (
                   <div className="two">
                     <div className="field">

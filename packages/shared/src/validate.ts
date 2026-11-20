@@ -1,5 +1,6 @@
 import type { Group, HtmlSkinScreensMap, Program, ProgramItem, ResolvedVoicePack, SkinKind, Step, Video } from "./program";
 import { VOICE_CUE_KEYS } from "./audio";
+import { STEP_DURATION_SEC_MAX, STEP_REPEAT_COUNT_MAX, STEP_REPEAT_COUNT_MIN } from "./step-duration";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -23,6 +24,7 @@ function validateStep(raw: unknown, path: string): Step {
   }
   const durationSec = asNumber(raw.durationSec, `${path}.durationSec`);
   if (!Number.isInteger(durationSec) || durationSec <= 0) throw new Error(`${path}.durationSec는 1 이상 정수예요`);
+  if (durationSec > STEP_DURATION_SEC_MAX) throw new Error(`${path}.durationSec는 ${STEP_DURATION_SEC_MAX} 이하여야 해요`);
   const step: Step = {
     id: asString(raw.id, `${path}.id`),
     type,
@@ -32,6 +34,14 @@ function validateStep(raw: unknown, path: string): Step {
   if (raw.screenId != null) step.screenId = asString(raw.screenId, `${path}.screenId`);
   if (raw.label != null) step.label = asString(raw.label, `${path}.label`);
   if (raw.text != null) step.text = asString(raw.text, `${path}.text`);
+  if (raw.repeatCount != null) {
+    if (type !== "exercise") throw new Error(`${path}.repeatCount는 exercise에만 넣을 수 있어요`);
+    const repeatCount = asNumber(raw.repeatCount, `${path}.repeatCount`);
+    if (!Number.isInteger(repeatCount) || repeatCount < STEP_REPEAT_COUNT_MIN || repeatCount > STEP_REPEAT_COUNT_MAX) {
+      throw new Error(`${path}.repeatCount는 ${STEP_REPEAT_COUNT_MIN}~${STEP_REPEAT_COUNT_MAX} 정수예요`);
+    }
+    step.repeatCount = repeatCount;
+  }
   return step;
 }
 

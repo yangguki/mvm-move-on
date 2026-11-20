@@ -12,6 +12,10 @@ import {
   refreshHtmlSkinLiveTokens,
   sanitizeHtmlSkinContent,
   validateHtmlProgramSteps,
+  collectMissingHtmlProgramScreens,
+  missingPublishScreensMessage,
+  collectMissingHtmlProgramVideos,
+  missingPublishHtmlVideosMessage,
   HTML_SKIN_CONTENT_MAX_BYTES,
   HTML_SKIN_SAMPLE_TOKENS,
 } from "../dist/index.js";
@@ -75,9 +79,15 @@ describe("validateHtmlProgramSteps", () => {
     assert.throws(() => validateHtmlProgramSteps(items, screens), /screenId가 필요해요/);
   });
 
-  it("영상 슬롯 화면은 videoId 필수", () => {
+  it("publish: 영상 슬롯 화면은 videoId 필수", () => {
     const items = [{ id: "s1", type: "exercise", durationSec: 10, screenId: "main" }];
     assert.throws(() => validateHtmlProgramSteps(items, screens), /videoId가 필요해요/);
+    assert.throws(() => validateHtmlProgramSteps(items, screens, "publish"), /videoId가 필요해요/);
+  });
+
+  it("draft: 영상 슬롯에 videoId 없어도 저장 가능", () => {
+    const items = [{ id: "s1", type: "exercise", durationSec: 10, screenId: "main" }];
+    assert.doesNotThrow(() => validateHtmlProgramSteps(items, screens, "draft"));
   });
 
   it("슬롯 없는 화면에 videoId 금지", () => {
@@ -92,6 +102,41 @@ describe("validateHtmlProgramSteps", () => {
       { id: "s3", type: "rest", durationSec: 15, screenId: "next" },
     ];
     assert.doesNotThrow(() => validateHtmlProgramSteps(items, screens));
+  });
+
+  it("draft: 삭제된 screenId는 저장 가능 (video 슬롯 검사 생략)", () => {
+    const items = [
+      { id: "s1", type: "exercise", durationSec: 10, screenId: "deleted-screen" },
+      { id: "s2", type: "guide", durationSec: 5, screenId: "title" },
+    ];
+    assert.doesNotThrow(() => validateHtmlProgramSteps(items, screens, "draft"));
+    assert.throws(
+      () => validateHtmlProgramSteps(items, screens, "publish"),
+      /screenId가 이 스킨의 화면이 아니에요/,
+    );
+  });
+
+  it("publish: 삭제된 화면 단계 메시지", () => {
+    const items = [
+      { id: "s1", type: "guide", durationSec: 10, screenId: "title" },
+      { id: "s2", type: "exercise", durationSec: 30, screenId: "gone" },
+      { id: "s3", type: "rest", durationSec: 10, screenId: "also-gone" },
+    ];
+    const missing = collectMissingHtmlProgramScreens(items, screens);
+    assert.deepEqual(missing.map((step) => step.stepNumber), [2, 3]);
+    assert.match(missingPublishScreensMessage(missing) ?? "", /2, 3단계/);
+    assert.match(missingPublishScreensMessage(missing) ?? "", /삭제된 화면/);
+  });
+
+  it("publish: 영상 없는 단계 메시지", () => {
+    const items = [
+      { id: "s1", type: "guide", durationSec: 10, screenId: "title" },
+      { id: "s2", type: "exercise", durationSec: 30, screenId: "main", label: "메인 운동" },
+      { id: "s3", type: "rest", durationSec: 10, screenId: "next" },
+    ];
+    const missing = collectMissingHtmlProgramVideos(items, screens);
+    assert.deepEqual(missing.map((step) => step.stepNumber), [2]);
+    assert.match(missingPublishHtmlVideosMessage(missing) ?? "", /2단계 "메인 운동"/);
   });
 });
 
@@ -183,6 +228,17 @@ describe("buildHtmlSkinStepPreviewDocument", () => {
     assert.match(doc, /color:#0ff/);
     assert.doesNotMatch(doc, /data-mvn-video/);
     assert.doesNotMatch(doc, /<script/i);
+  });
+
+  it("unknown screenId shows placeholder (no video-slot fallback)", () => {
+    const doc = buildHtmlSkinStepPreviewDocument({
+      screens,
+      screenId: "deleted-id",
+      tokens: { label: "orphan" },
+      baseHref: "/",
+    });
+    assert.match(doc, /화면 없음/);
+    assert.doesNotMatch(doc, /data-mvn-video/);
   });
 
   it("falls back to video screen when screenId missing", () => {

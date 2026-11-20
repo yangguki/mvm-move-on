@@ -62,6 +62,8 @@ export type Step = {
   id: string;
   type: StepType;
   durationSec: number;
+  /** 영상 운동 단계: 영상 1회 길이에 대한 반복 횟수 (draft JSON) */
+  repeatCount?: number;
   videoId?: string;
   screenId?: string;
   label?: string;

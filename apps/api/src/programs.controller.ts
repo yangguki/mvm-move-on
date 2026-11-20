@@ -22,6 +22,8 @@ import {
   playTotalSec,
   validateProgram,
   validateHtmlProgramSteps,
+  collectMissingHtmlProgramScreens,
+  missingPublishScreensMessage,
   type Program as SharedProgram,
   type PublishedSnapshot,
   type Video,
@@ -102,7 +104,7 @@ async function asDraft(
         where: { skinId: skinRow.id },
         select: { id: true, hasVideoSlot: true, hasNextVideoSlot: true, titleOnly: true },
       });
-      validateHtmlProgramSteps(checked.items, screenRows);
+      validateHtmlProgramSteps(checked.items, screenRows, "draft");
       checked.skin.kind = "html";
     } else if (skinRow?.kind === "tokens") {
       checked.skin.kind = "tokens";
@@ -285,8 +287,11 @@ export class ProgramsController {
     const missingMessage = missingPublishVideosMessage(missingVideos);
     if (missingMessage) throw new BadRequestException(missingMessage);
     if (skinKind === "html") {
+      const missingScreens = collectMissingHtmlProgramScreens(draft.items, screenRows);
+      const missingScreensMessage = missingPublishScreensMessage(missingScreens);
+      if (missingScreensMessage) throw new BadRequestException(missingScreensMessage);
       try {
-        validateHtmlProgramSteps(draft.items, screenRows);
+        validateHtmlProgramSteps(draft.items, screenRows, "publish");
       } catch (error) {
         throw new BadRequestException(error instanceof Error ? error.message : "프로그램 draft가 올바르지 않아요");
       }

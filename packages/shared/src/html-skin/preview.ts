@@ -71,9 +71,29 @@ function toOrderedAndMap(
  * 빌더 중앙 미리보기용 정적 srcdoc.
  * sanitize + 토큰 채움 + video src 주입, <script> 없음, <base>로 /skins 자산 해석.
  */
+/** 빌더용: 삭제·없는 screenId — 영상 슬롯으로 대체하지 않는 중립 placeholder */
+export function buildHtmlSkinMissingScreenPlaceholderDocument(baseHref: string): string {
+  const base = escapeAttr(baseHref || "/");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><base href="${base}"><style>
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#111827;color:#e5e7eb;font-family:system-ui,sans-serif}
+#mvn-screen{position:relative;width:1920px;height:1080px;transform-origin:top left;transform:scale(calc(100vw / 1920));display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.mvn-missing{font-size:42px;font-weight:600;letter-spacing:-0.02em}
+.mvn-missing-sub{font-size:22px;color:#9ca3af}
+</style></head><body><div id="mvn-screen"><div class="mvn-missing">화면 없음</div><div class="mvn-missing-sub">다른 화면을 선택해 주세요</div></div></body></html>`;
+}
+
 export function buildHtmlSkinStepPreviewDocument(input: BuildHtmlSkinStepPreviewInput): string {
   const { ordered, map } = toOrderedAndMap(input.screens);
-  const screen = resolveStepScreen(input.screenId, map, ordered);
+  const screenId = input.screenId?.trim();
+  const screen =
+    screenId && map[screenId]
+      ? map[screenId]
+      : screenId
+        ? null
+        : resolveStepScreen(input.screenId, map, ordered);
+  if (!screen) {
+    return buildHtmlSkinMissingScreenPlaceholderDocument(input.baseHref);
+  }
   const rawHtml = screen?.html ?? "";
   const rawCss = screen?.css ?? "";
   const { html: cleanHtml, css: cleanCss } = sanitizeHtmlSkinContent(rawHtml, rawCss);

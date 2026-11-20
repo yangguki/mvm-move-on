@@ -102,6 +102,28 @@ describe("validateProgram", () => {
     };
     assert.throws(() => validateProgram(nested), /그룹을 중첩할 수 없어요/);
   });
+
+  it("exercise 단계 repeatCount를 정규화 후에도 유지한다", () => {
+    const raw = {
+      id: "repeat-test",
+      name: "반복 테스트",
+      status: "draft",
+      skin: { id: "neon-arcade", options: { pointColor: "#C8F31D", nextLeadSec: 10 } },
+      items: [
+        {
+          id: "ex-1",
+          type: "exercise",
+          durationSec: 12,
+          repeatCount: 3,
+          videoId: "v1",
+          screenId: "main",
+        },
+      ],
+    };
+    const program = validateProgram(raw);
+    assert.equal(program.items[0].repeatCount, 3);
+    assert.equal(program.items[0].durationSec, 12);
+  });
 });
 
 describe("snapshot audio", () => {
