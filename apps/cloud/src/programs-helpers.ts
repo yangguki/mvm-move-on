@@ -4,6 +4,7 @@ import {
   collectVideoRefs,
   presentVideoRow,
   resolveHtmlPublishScreenIds,
+  stripStaleHtmlProgramVideoIds,
   validateHtmlProgramSteps,
   validateProgram,
   type Program as SharedProgram,
@@ -144,7 +145,9 @@ export async function asDraft(
   const skinRow = await findSkinByIdOrSlug(db, checked.skin.id);
   if (skinRow?.kind === "html") {
     const screenRows = await loadProgramScreens(db, skinRow.id);
-    validateHtmlProgramSteps(checked.items, screenRows.map(screenRowToPublishRef), "draft");
+    const screenRefs = screenRows.map(screenRowToPublishRef);
+    checked.items = stripStaleHtmlProgramVideoIds(checked.items, screenRefs);
+    validateHtmlProgramSteps(checked.items, screenRefs, "draft");
     checked.skin.kind = "html";
   } else if (skinRow?.kind === "tokens") {
     checked.skin.kind = "tokens";

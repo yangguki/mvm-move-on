@@ -34,6 +34,7 @@ import {
   expand,
   inferVideoStepRepeatCount,
   normalizeBuilderDirtySteps,
+  stripStaleBuilderStepVideoIds,
   playTotalSec,
   resolveDefaultVideoStepRepeatCount,
   resolveVideoStepDurationSec,
@@ -42,9 +43,13 @@ import {
   type Program as SharedProgram,
   type ProgramItem,
   type Step as SharedStep,
+  isYouTubeUrl,
+  parseYouTubeVideoId,
+  resolveExternalVideoThumbnail,
 } from "@mvn/shared";
 import { ApiError, api } from "@/lib/api";
 import { isCloudDataMode } from "@/lib/data-mode";
+import { fetchYouTubeDurationSec } from "@/lib/youtube-duration";
 
 type Kind = "countdown" | "exercise" | "rest";
 type Frame = "exercise" | "next" | "rest";
@@ -293,7 +298,8 @@ export function builderStepToShared(
     durationSec,
     label: step.label,
     text: step.subtitle ?? undefined,
-    videoId: step.videoId ?? undefined,
+    videoId:
+      opts.isHtmlSkin && screen && !screen.hasVideoSlot ? undefined : (step.videoId ?? undefined),
     screenId: step.screenId ?? undefined,
   };
   if (sharedType === "exercise" && repeatCount != null) out.repeatCount = repeatCount;
@@ -401,6 +407,8 @@ export function BuilderScreen({
   const [saving, setSaving] = useState(false);
   const [skinFrameOk, setSkinFrameOk] = useState<boolean | null>(null);
   const [videoForm, setVideoForm] = useState({ name: "", url: "", durationSec: 10, thumbnailUrl: "" });
+  const [videoUrlDurationBusy, setVideoUrlDurationBusy] = useState(false);
+  const videoUrlDurationGen = useRef(0);
   const dragFrom = useRef<number | null>(null);
   const snapshot = useRef("");
   const previewRef = useRef<HTMLIFrameElement | null>(null);
@@ -519,6 +527,21 @@ export function BuilderScreen({
       return changed ? next : current;
     });
   }, [isHtmlSkin, skinScreens, videos]);
+
+  // HTML 스킨: 영상 슬롯 없는 화면에 남은 videoId 제거 (로드·화면 메타 동기화)
+  useEffect(() => {
+    if (!isHtmlSkin || !skinScreens.length) return;
+    setSteps((current) => {
+      const next = stripStaleBuilderStepVideoIds(current, skinScreens);
+      const changed = next.some((step, index) => step.videoId !== current[index]?.videoId);
+      if (!changed) return current;
+      const wasDirty = draftSnapshotKey(name, selectedSkinSlug, skinOptions, current) !== snapshot.current;
+      if (!wasDirty) {
+        snapshot.current = draftSnapshotKey(name, selectedSkinSlug, skinOptions, next);
+      }
+      return next;
+    });
+  }, [isHtmlSkin, skinScreens, name, selectedSkinSlug, skinOptions]);
 
   const draftKey = useMemo(
     () => draftSnapshotKey(name, selectedSkinSlug, skinOptions, steps),
@@ -1022,15 +1045,38 @@ export function BuilderScreen({
     }
   }
 
+  async function probeBuilderYouTubeDuration(url: string) {
+    if (!isYouTubeUrl(url)) return;
+    const gen = ++videoUrlDurationGen.current;
+    setVideoUrlDurationBusy(true);
+    try {
+      const sec = await fetchYouTubeDurationSec(url);
+      if (gen !== videoUrlDurationGen.current) return;
+      if (sec && sec > 0) {
+        setVideoForm((prev) => (prev.url.trim() === url.trim() ? { ...prev, durationSec: sec } : prev));
+      }
+    } catch {
+      /* manual */
+    } finally {
+      if (gen === videoUrlDurationGen.current) setVideoUrlDurationBusy(false);
+    }
+  }
+
   async function registerVideo() {
     try {
+      const url = videoForm.url.trim();
+      if (!url) throw new Error("URL이 필요해요");
+      if (isYouTubeUrl(url) && (!videoForm.durationSec || videoForm.durationSec < 1)) {
+        throw new Error("YouTube 영상 길이(초)를 확인하거나 입력해 주세요");
+      }
+      const thumbnailUrl = resolveExternalVideoThumbnail(url, videoForm.thumbnailUrl || url);
       const created = await api<VideoItem>("/admin/v1/videos", {
         method: "POST",
         body: JSON.stringify({
           name: videoForm.name || "새 영상",
-          url: videoForm.url,
+          url,
           durationSec: Number(videoForm.durationSec) || 10,
-          thumbnailUrl: videoForm.thumbnailUrl || videoForm.url,
+          thumbnailUrl,
           width: 1920,
           height: 1080,
         }),
@@ -1203,7 +1249,11 @@ export function BuilderScreen({
       baseHref,
     });
     const key = `${selected}:${current.screenId ?? ""}:${videoUrl ?? ""}:${nextVideoUrl ?? ""}`;
-    return { srcdoc, key };
+    const sandbox =
+      (videoUrl && parseYouTubeVideoId(videoUrl)) || (nextVideoUrl && parseYouTubeVideoId(nextVideoUrl))
+        ? "allow-scripts allow-same-origin"
+        : "";
+    return { srcdoc, key, sandbox };
   }, [isHtmlSkin, current, selected, steps, videoMap, name, skinOptions, skinScreens]);
 
   useEffect(() => {
@@ -1572,7 +1622,7 @@ export function BuilderScreen({
                     key={htmlPreview.key}
                     ref={htmlPreviewIframeRef}
                     title="HTML 스킨 미리보기"
-                    sandbox=""
+                    sandbox={htmlPreview.sandbox || undefined}
                     srcDoc={htmlPreview.srcdoc}
                     style={{
                       position: "absolute",
@@ -1931,12 +1981,27 @@ export function BuilderScreen({
                       />
                       <input
                         className="input"
-                        placeholder="https://…mp4"
+                        placeholder="https://…mp4 또는 YouTube"
                         value={videoForm.url}
                         onChange={(event) => setVideoForm((currentForm) => ({ ...currentForm, url: event.target.value }))}
+                        onBlur={() => {
+                          const url = videoForm.url.trim();
+                          if (url && isYouTubeUrl(url)) void probeBuilderYouTubeDuration(url);
+                        }}
                       />
                     </div>
-                    <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} disabled={!videoForm.url} onClick={() => void registerVideo()}>
+                    {videoUrlDurationBusy ? (
+                      <small style={{ display: "block", marginTop: 6 }}>YouTube 길이 확인 중…</small>
+                    ) : isYouTubeUrl(videoForm.url) && videoForm.durationSec > 0 ? (
+                      <small style={{ display: "block", marginTop: 6 }}>YouTube 길이 {videoForm.durationSec}초</small>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ marginTop: 8 }}
+                      disabled={!videoForm.url || videoUrlDurationBusy}
+                      onClick={() => void registerVideo()}
+                    >
                       영상 URL 등록
                     </button>
                   </div>

@@ -16,6 +16,13 @@ import {
 } from "lucide-react";
 import { api, ApiError, apiUrl } from "@/lib/api";
 import { isCloudDataMode } from "@/lib/data-mode";
+import { fetchYouTubeDurationSec } from "@/lib/youtube-duration";
+import {
+  isYouTubeUrl,
+  parseYouTubeVideoId,
+  resolveExternalVideoThumbnail,
+  youtubeNocookieEmbedUrl,
+} from "@mvn/shared";
 
 type VideoItem = {
   id: string;
@@ -59,6 +66,8 @@ export default function VideosPage() {
   const [preview, setPreview] = useState<VideoItem | null>(null);
   const [urlForm, setUrlForm] = useState({ name: "", url: "", durationSec: 10 });
   const [showUrlForm, setShowUrlForm] = useState(false);
+  const [urlDurationBusy, setUrlDurationBusy] = useState(false);
+  const urlDurationGen = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -119,18 +128,40 @@ export default function VideosPage() {
     }
   }
 
+  async function probeYouTubeDuration(url: string) {
+    if (!isYouTubeUrl(url)) return;
+    const gen = ++urlDurationGen.current;
+    setUrlDurationBusy(true);
+    try {
+      const sec = await fetchYouTubeDurationSec(url);
+      if (gen !== urlDurationGen.current) return;
+      if (sec && sec > 0) {
+        setUrlForm((prev) => (prev.url.trim() === url.trim() ? { ...prev, durationSec: sec } : prev));
+      }
+    } catch {
+      /* manual duration */
+    } finally {
+      if (gen === urlDurationGen.current) setUrlDurationBusy(false);
+    }
+  }
+
   async function registerUrl() {
     setBusy(true);
     setError("");
     try {
       if (!urlForm.url.trim()) throw new Error("URL을 입력해 주세요");
+      const url = urlForm.url.trim();
+      if (isYouTubeUrl(url) && (!urlForm.durationSec || urlForm.durationSec < 1)) {
+        throw new Error("YouTube 영상 길이(초)를 입력해 주세요");
+      }
+      const thumbnailUrl = resolveExternalVideoThumbnail(url, url);
       await api("/admin/v1/videos", {
         method: "POST",
         body: JSON.stringify({
           name: urlForm.name.trim() || "외부 영상",
-          url: urlForm.url.trim(),
+          url,
           durationSec: urlForm.durationSec || 10,
-          thumbnailUrl: urlForm.url.trim(),
+          thumbnailUrl,
           width: 1920,
           height: 1080,
         }),
@@ -257,9 +288,16 @@ export default function VideosPage() {
             <label className="label">URL</label>
             <input
               className="input"
-              placeholder="https://..."
+              placeholder="https://... (mp4 또는 YouTube)"
               value={urlForm.url}
-              onChange={(e) => setUrlForm({ ...urlForm, url: e.target.value })}
+              onChange={(e) => {
+                const url = e.target.value;
+                setUrlForm((prev) => ({ ...prev, url }));
+              }}
+              onBlur={() => {
+                const url = urlForm.url.trim();
+                if (url && isYouTubeUrl(url)) void probeYouTubeDuration(url);
+              }}
             />
           </div>
           <div className="field" style={{ width: 80 }}>
@@ -272,10 +310,15 @@ export default function VideosPage() {
               onChange={(e) => setUrlForm({ ...urlForm, durationSec: Number(e.target.value) || 10 })}
             />
           </div>
+          {urlDurationBusy ? (
+            <span style={{ fontSize: 12, color: "var(--muted, #6b7280)", alignSelf: "center" }}>
+              YouTube 길이 확인 중…
+            </span>
+          ) : null}
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            disabled={busy || !urlForm.url.trim()}
+            disabled={busy || urlDurationBusy || !urlForm.url.trim()}
             onClick={() => void registerUrl()}
           >
             <Plus className="i i-sm" aria-hidden />
@@ -410,13 +453,22 @@ export default function VideosPage() {
             style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <video
-              src={preview.url}
-              controls
-              autoPlay
-              loop
-              style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 8 }}
-            />
+            {parseYouTubeVideoId(preview.url) ? (
+              <iframe
+                src={youtubeNocookieEmbedUrl(parseYouTubeVideoId(preview.url)!)}
+                title={preview.name}
+                allow="autoplay; encrypted-media; picture-in-picture"
+                style={{ width: "min(90vw, 960px)", aspectRatio: "16 / 9", border: 0, borderRadius: 8 }}
+              />
+            ) : (
+              <video
+                src={preview.url}
+                controls
+                autoPlay
+                loop
+                style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 8 }}
+              />
+            )}
             <button
               type="button"
               onClick={() => setPreview(null)}

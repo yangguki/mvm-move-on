@@ -24,6 +24,19 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.includes("/api/") || url.pathname.includes("/player/v1/")) {
     return;
   }
+  const h = url.hostname;
+  if (
+    h === "www.youtube.com" ||
+    h === "youtube.com" ||
+    h === "www.youtube-nocookie.com" ||
+    h === "youtube-nocookie.com" ||
+    h === "img.youtube.com" ||
+    h === "i.ytimg.com" ||
+    h.endsWith(".googlevideo.com") ||
+    h.endsWith(".ytimg.com")
+  ) {
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );

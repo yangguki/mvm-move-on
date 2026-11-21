@@ -1,12 +1,20 @@
 import {
   buildHtmlSkinSrcdoc,
   parseHtmlSkinStepText,
+  parseYouTubeVideoId,
   resolveStepScreen,
+  youtubeThumbnailUrl,
   type HtmlSkinScreensMap,
   type PlayItem,
   type PublishedSnapshot,
   type SkinScreenSnapshot,
 } from "@mvn/shared";
+import {
+  loadYouTubeIframeApi,
+  youtubeCoverTransform,
+  youtubePlayerVars,
+  type YouTubeIframeApi,
+} from "./youtube-iframe-api";
 
 type HtmlSkinProgram = PublishedSnapshot & {
   playItems: PlayItem[];
@@ -15,6 +23,13 @@ type HtmlSkinProgram = PublishedSnapshot & {
 };
 
 type SlotRect = { left: number; top: number; width: number; height: number };
+
+type SlotMount = {
+  slot: "main" | "next";
+  el: HTMLElement;
+  kind: "video" | "youtube" | "thumbnail";
+  ytPlayer?: { destroy: () => void; pauseVideo: () => void; playVideo: () => void };
+};
 
 const FALLBACK_HTML = `
 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#111;color:#fff;font-family:system-ui,sans-serif">
@@ -33,7 +48,7 @@ export type HtmlSkinPlayerCallbacks = {
 export class HtmlSkinPlayer {
   private wrap: HTMLElement;
   private iframe: HTMLIFrameElement | null = null;
-  private videoEls: HTMLVideoElement[] = [];
+  private slotMounts: SlotMount[] = [];
   private timer: number | null = null;
   private index = 0;
   private program: HtmlSkinProgram | null = null;
@@ -50,6 +65,7 @@ export class HtmlSkinPlayer {
   private tickPlayIndex = 0;
   private currentScreen: SkinScreenSnapshot | null = null;
   private currentItem: PlayItem | null = null;
+  private mountGeneration = 0;
 
   constructor(wrap: HTMLElement, callbacks: HtmlSkinPlayerCallbacks) {
     this.wrap = wrap;
@@ -62,7 +78,7 @@ export class HtmlSkinPlayer {
 
   destroy(): void {
     this.stopTimer();
-    this.clearVideos();
+    this.clearSlotMounts();
     if (this.iframe) this.iframe.remove();
     this.iframe = null;
     if (this.relayoutRaf != null) {
@@ -83,9 +99,17 @@ export class HtmlSkinPlayer {
     } else {
       this.startTickTimer();
     }
-    this.videoEls.forEach((video) => {
-      if (paused) video.pause();
-      else void video.play();
+    this.slotMounts.forEach((mount) => {
+      if (mount.kind === "video") {
+        const video = mount.el as HTMLVideoElement;
+        if (paused) video.pause();
+        else void video.play();
+        return;
+      }
+      if (mount.kind === "youtube" && mount.ytPlayer) {
+        if (paused) mount.ytPlayer.pauseVideo();
+        else mount.ytPlayer.playVideo();
+      }
     });
   }
 
@@ -136,7 +160,7 @@ export class HtmlSkinPlayer {
     this.iframe.style.left = `${this.stageOffsetX}px`;
     this.iframe.style.top = `${this.stageOffsetY}px`;
     this.iframe.style.transform = `scale(${this.scale})`;
-    this.positionVideos();
+    this.positionSlotMounts();
   };
 
   private screensMap(): HtmlSkinScreensMap {
@@ -160,7 +184,7 @@ export class HtmlSkinPlayer {
         height: rect.height,
       };
     }
-    this.positionVideos();
+    this.positionSlotMounts();
   };
 
   private stopTimer(): void {
@@ -170,9 +194,16 @@ export class HtmlSkinPlayer {
     }
   }
 
-  private clearVideos(): void {
-    this.videoEls.forEach((v) => v.remove());
-    this.videoEls = [];
+  private clearSlotMounts(): void {
+    this.slotMounts.forEach((mount) => {
+      try {
+        mount.ytPlayer?.destroy();
+      } catch {
+        /* ignore */
+      }
+      mount.el.remove();
+    });
+    this.slotMounts = [];
     this.slotRects = {};
   }
 
@@ -203,20 +234,21 @@ export class HtmlSkinPlayer {
       return;
     }
     this.index = playIndex;
+    this.mountGeneration += 1;
     this.stopTimer();
-    this.clearVideos();
+    this.clearSlotMounts();
     const item = items[playIndex];
     const screen =
       resolveStepScreen(item.screenId, this.screensMap(), this.orderedScreens()) ?? {
-      id: "fallback",
-      title: "fallback",
-      html: FALLBACK_HTML,
-      css: FALLBACK_CSS,
-      hasVideoSlot: true,
-      hasNextVideoSlot: false,
-      titleOnly: false,
-      version: 1,
-    };
+        id: "fallback",
+        title: "fallback",
+        html: FALLBACK_HTML,
+        css: FALLBACK_CSS,
+        hasVideoSlot: true,
+        hasNextVideoSlot: false,
+        titleOnly: false,
+        version: 1,
+      };
     this.currentScreen = screen;
     this.currentItem = item;
     const origins = {
@@ -236,7 +268,7 @@ export class HtmlSkinPlayer {
     const tokens = this.buildTokens(item, remaining);
     this.iframe.onload = () => {
       this.postTokens(tokens);
-      this.mountVideos(item, screen);
+      this.mountSlots(item, screen);
       if (!this.paused) this.startTickTimer();
     };
   }
@@ -263,18 +295,130 @@ export class HtmlSkinPlayer {
     };
   }
 
-  private mountVideos(item: PlayItem, screen: SkinScreenSnapshot): void {
+  private mountSlots(item: PlayItem, screen: SkinScreenSnapshot): void {
     if (screen.hasVideoSlot && item.video?.url) {
-      const main = this.createSlotVideo(item.video.url, "main");
-      this.wrap.appendChild(main);
-      this.videoEls.push(main);
+      const url = item.video.url;
+      const ytId = parseYouTubeVideoId(url);
+      if (ytId) {
+        void this.mountMainYouTube(ytId, this.mountGeneration);
+      } else {
+        const main = this.createSlotVideo(url, "main");
+        this.wrap.appendChild(main);
+        this.slotMounts.push({ slot: "main", el: main, kind: "video" });
+      }
     }
     if (screen.hasNextVideoSlot && item.next?.video?.url) {
-      const next = this.createSlotVideo(item.next.video.url, "next");
-      this.wrap.appendChild(next);
-      this.videoEls.push(next);
+      const url = item.next.video.url;
+      const ytId = parseYouTubeVideoId(url);
+      if (ytId) {
+        const thumb = this.createSlotThumbnail(ytId, "next");
+        this.wrap.appendChild(thumb);
+        this.slotMounts.push({ slot: "next", el: thumb, kind: "thumbnail" });
+      } else {
+        const next = this.createSlotVideo(url, "next");
+        this.wrap.appendChild(next);
+        this.slotMounts.push({ slot: "next", el: next, kind: "video" });
+      }
     }
-    this.positionVideos();
+    this.positionSlotMounts();
+  }
+
+  private async mountMainYouTube(videoId: string, generation: number): Promise<void> {
+    const host = this.createYtHost("main");
+    this.wrap.appendChild(host);
+    const mount: SlotMount = { slot: "main", el: host, kind: "youtube" };
+    this.slotMounts.push(mount);
+    this.positionSlotMounts();
+
+    let yt: YouTubeIframeApi;
+    try {
+      yt = await loadYouTubeIframeApi();
+    } catch {
+      if (generation !== this.mountGeneration) return;
+      this.replaceMountWithThumbnail(mount, videoId);
+      return;
+    }
+    if (generation !== this.mountGeneration) return;
+
+    const slot = this.slotRects.main;
+    const w = slot && slot.width > 0 ? Math.round(slot.width) : 640;
+    const h = slot && slot.height > 0 ? Math.round(slot.height) : 360;
+
+    try {
+      const player = new yt.Player(host, {
+        host: "https://www.youtube-nocookie.com",
+        videoId,
+        width: w,
+        height: h,
+        playerVars: youtubePlayerVars(),
+        events: {
+          onReady: (event) => {
+            if (generation !== this.mountGeneration) return;
+            mount.ytPlayer = event.target;
+            this.applyYtCover(host, w, h);
+            if (!this.paused) event.target.playVideo();
+            else event.target.pauseVideo();
+          },
+          onStateChange: (event) => {
+            if (generation !== this.mountGeneration) return;
+            if (event.data === yt.PlayerState.ENDED) {
+              event.target.seekTo(0, true);
+              event.target.playVideo();
+            }
+          },
+          onError: () => {
+            if (generation !== this.mountGeneration) return;
+            this.replaceMountWithThumbnail(mount, videoId);
+          },
+        },
+      });
+      mount.ytPlayer = player;
+    } catch {
+      if (generation !== this.mountGeneration) return;
+      this.replaceMountWithThumbnail(mount, videoId);
+    }
+  }
+
+  private replaceMountWithThumbnail(mount: SlotMount, videoId: string): void {
+    const idx = this.slotMounts.indexOf(mount);
+    if (idx === -1) return;
+    try {
+      mount.ytPlayer?.destroy();
+    } catch {
+      /* ignore */
+    }
+    mount.el.remove();
+    const thumb = this.createSlotThumbnail(videoId, mount.slot);
+    this.wrap.appendChild(thumb);
+    this.slotMounts[idx] = { slot: mount.slot, el: thumb, kind: "thumbnail" };
+    this.positionSlotMounts();
+  }
+
+  private createYtHost(slot: "main" | "next"): HTMLDivElement {
+    const host = document.createElement("div");
+    host.dataset.slot = slot;
+    host.dataset.kind = "youtube";
+    host.style.display = "none";
+    host.style.position = "absolute";
+    host.style.pointerEvents = "none";
+    host.style.zIndex = "2";
+    host.style.overflow = "hidden";
+    return host;
+  }
+
+  private applyYtCover(host: HTMLDivElement, slotW: number, slotH: number): void {
+    const iframe = host.querySelector("iframe");
+    if (!iframe) return;
+    const { scale } = youtubeCoverTransform(slotW, slotH);
+    iframe.style.position = "absolute";
+    iframe.style.left = "50%";
+    iframe.style.top = "50%";
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.transform = `translate(-50%, -50%) scale(${scale})`;
+    iframe.style.transformOrigin = "center center";
+    iframe.style.border = "0";
+    iframe.style.pointerEvents = "none";
   }
 
   private resolveMediaUrl(url: string): string {
@@ -295,6 +439,7 @@ export class HtmlSkinPlayer {
     video.playsInline = true;
     video.loop = true;
     video.dataset.slot = slot;
+    video.dataset.kind = "video";
     video.style.display = "none";
     video.style.position = "absolute";
     video.style.pointerEvents = "none";
@@ -310,7 +455,22 @@ export class HtmlSkinPlayer {
     return video;
   }
 
-  private positionVideos(): void {
+  private createSlotThumbnail(videoId: string, slot: "main" | "next"): HTMLImageElement {
+    const img = document.createElement("img");
+    img.src = youtubeThumbnailUrl(videoId);
+    img.alt = "";
+    img.dataset.slot = slot;
+    img.dataset.kind = "thumbnail";
+    img.style.display = "none";
+    img.style.position = "absolute";
+    img.style.pointerEvents = "none";
+    img.style.zIndex = "2";
+    img.style.objectFit = "cover";
+    img.referrerPolicy = "strict-origin-when-cross-origin";
+    return img;
+  }
+
+  private positionSlotMounts(): void {
     if (!this.iframe) return;
     const s = this.scale;
     const slots = this.slotRects;
@@ -318,32 +478,39 @@ export class HtmlSkinPlayer {
     const oy = this.stageOffsetY;
     const screen = this.currentScreen;
     const item = this.currentItem;
-    this.videoEls.forEach((video) => {
-      const isNext = video.dataset.slot === "next";
+    this.slotMounts.forEach((mount) => {
+      const isNext = mount.slot === "next";
       if (!screen) {
-        video.style.display = "none";
+        mount.el.style.display = "none";
         return;
       }
       if (isNext) {
         if (!screen.hasNextVideoSlot || !item?.next?.video?.url) {
-          video.style.display = "none";
+          mount.el.style.display = "none";
           return;
         }
       } else if (!screen.hasVideoSlot || !item?.video?.url) {
-        video.style.display = "none";
+        mount.el.style.display = "none";
         return;
       }
       const slot = isNext ? slots.next : slots.main;
       if (!slot || slot.width <= 0 || slot.height <= 0) {
-        video.style.display = "none";
+        mount.el.style.display = "none";
         return;
       }
-      video.style.display = "block";
-      video.style.left = `${ox + slot.left * s}px`;
-      video.style.top = `${oy + slot.top * s}px`;
-      video.style.width = `${slot.width * s}px`;
-      video.style.height = `${slot.height * s}px`;
-      video.style.objectFit = "cover";
+      const w = slot.width * s;
+      const h = slot.height * s;
+      mount.el.style.display = "block";
+      mount.el.style.left = `${ox + slot.left * s}px`;
+      mount.el.style.top = `${oy + slot.top * s}px`;
+      mount.el.style.width = `${w}px`;
+      mount.el.style.height = `${h}px`;
+      if (mount.kind === "video") {
+        (mount.el as HTMLVideoElement).style.objectFit = "cover";
+      }
+      if (mount.kind === "youtube") {
+        this.applyYtCover(mount.el as HTMLDivElement, Math.round(slot.width), Math.round(slot.height));
+      }
     });
   }
 }

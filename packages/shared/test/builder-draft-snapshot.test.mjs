@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   builderDraftSnapshotKey,
   normalizeBuilderDirtySteps,
+  stripStaleBuilderStepVideoIds,
 } from "../dist/admin-logic/builder-draft-snapshot.js";
 
 describe("builder draft snapshot", () => {
@@ -25,6 +26,25 @@ describe("builder draft snapshot", () => {
     const keyA = builderDraftSnapshotKey("p", "skin", {}, withoutFlag);
     const keyB = builderDraftSnapshotKey("p", "skin", {}, normalizeBuilderDirtySteps(withFlag));
     assert.equal(keyA, keyB);
+  });
+
+  it("stripStaleBuilderStepVideoIds clears video on non-slot screen", () => {
+    const steps = [
+      {
+        kind: "countdown",
+        label: "타이틀",
+        subtitle: null,
+        seconds: 10,
+        videoId: "v1",
+        screenId: "title",
+        groupKey: null,
+        groupLabel: null,
+        groupRepeat: null,
+      },
+    ];
+  const screens = [{ id: "title", hasVideoSlot: false }, { id: "main", hasVideoSlot: true }];
+    const next = stripStaleBuilderStepVideoIds(steps, screens);
+    assert.equal(next[0].videoId, null);
   });
 
   it("detects real step changes", () => {

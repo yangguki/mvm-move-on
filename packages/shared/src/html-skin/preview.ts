@@ -1,4 +1,5 @@
 import type { SkinScreenSnapshot } from "../program";
+import { parseYouTubeVideoId, youtubeNocookieEmbedUrl } from "../youtube";
 import { resolveStepScreen } from "./screens";
 import { sanitizeHtmlSkinContent } from "./sanitize";
 import type { HtmlSkinTokenMap } from "./tokens";
@@ -24,9 +25,18 @@ export function htmlSkinSlotVideoTag(videoUrl: string): string {
   return `<video src="${escapeAttr(videoUrl)}" style="width:100%;height:100%;object-fit:cover;display:block" muted autoplay playsinline loop></video>`;
 }
 
+export function htmlSkinSlotVideoMarkup(videoUrl: string): string {
+  const ytId = parseYouTubeVideoId(videoUrl);
+  if (ytId) {
+    const embed = youtubeNocookieEmbedUrl(ytId);
+    return `<iframe src="${escapeAttr(embed)}" title="YouTube" style="width:100%;height:100%;border:0;display:block" allow="autoplay; encrypted-media; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+  }
+  return htmlSkinSlotVideoTag(videoUrl);
+}
+
 function injectVideoIntoSlot(html: string, attr: string, videoUrl: string | null | undefined): string {
   if (!videoUrl) return html;
-  const video = htmlSkinSlotVideoTag(videoUrl);
+  const video = htmlSkinSlotVideoMarkup(videoUrl);
   const re = new RegExp(`(<[^>]*\\b${attr}\\b[^>]*>)([\\s\\S]*?)(<\\/[^>]+>)`, "i");
   if (!re.test(html)) return html;
   return html.replace(re, `$1${video}$3`);

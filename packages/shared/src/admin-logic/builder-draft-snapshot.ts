@@ -12,6 +12,17 @@ export type BuilderDirtyStep = {
   groupRepeat: number | null;
 };
 
+export function stripStaleBuilderStepVideoIds<
+  T extends Pick<BuilderDirtyStep, "videoId" | "screenId">,
+>(stepList: T[], screens: Array<{ id: string; hasVideoSlot: boolean }>): T[] {
+  return stepList.map((step) => {
+    if (!step.videoId?.trim() || !step.screenId?.trim()) return step;
+    const screen = screens.find((s) => s.id === step.screenId);
+    if (screen && !screen.hasVideoSlot) return { ...step, videoId: null };
+    return step;
+  });
+}
+
 export function normalizeBuilderDirtySteps<
   T extends BuilderDirtyStep & { durationUserEdited?: boolean },
 >(stepList: T[]): BuilderDirtyStep[] {

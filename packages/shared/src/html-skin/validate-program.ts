@@ -11,13 +11,49 @@ function isGroup(item: ProgramItem): item is Extract<ProgramItem, { type: "group
   return (item as { type?: string }).type === "group";
 }
 
-function walkSteps(items: ProgramItem[], visit: (step: Step, path: string) => void): void {
+function walkSteps(
+  items: ProgramItem[],
+  visit: (step: Step, path: string, stepNumber: number) => void,
+): void {
+  let stepNumber = 0;
   items.forEach((item, index) => {
     if (isGroup(item)) {
-      item.steps.forEach((step, stepIndex) => visit(step, `items[${index}].steps[${stepIndex}]`));
+      item.steps.forEach((step, stepIndex) => {
+        stepNumber += 1;
+        visit(step, `items[${index}].steps[${stepIndex}]`, stepNumber);
+      });
       return;
     }
-    visit(item, `items[${index}]`);
+    stepNumber += 1;
+    visit(item, `items[${index}]`, stepNumber);
+  });
+}
+
+function stripStepVideoIdIfNoSlot(step: Step, byId: Map<string, HtmlSkinScreenRef>): Step {
+  const screenId = step.screenId?.trim();
+  if (!screenId) return step;
+  const screen = byId.get(screenId);
+  if (!screen?.hasVideoSlot && step.videoId?.trim()) {
+    const { videoId: _drop, ...rest } = step;
+    return rest as Step;
+  }
+  return step;
+}
+
+/** 영상 슬롯 없는 html 화면에 남은 videoId 제거 (draft 저장·로드 정리용) */
+export function stripStaleHtmlProgramVideoIds(
+  items: ProgramItem[],
+  screens: HtmlSkinScreenRef[],
+): ProgramItem[] {
+  const byId = new Map(screens.map((screen) => [screen.id, screen]));
+  return items.map((item) => {
+    if (isGroup(item)) {
+      const steps = item.steps.map((step) => stripStepVideoIdIfNoSlot(step, byId));
+      const changed = steps.some((step, index) => step !== item.steps[index]);
+      return changed ? { ...item, steps } : item;
+    }
+    const next = stripStepVideoIdIfNoSlot(item, byId);
+    return next !== item ? next : item;
   });
 }
 
@@ -34,9 +70,7 @@ export function collectMissingHtmlProgramScreens(
 ): MissingHtmlScreenStep[] {
   const byId = new Map(screens.map((screen) => [screen.id, screen]));
   const missing: MissingHtmlScreenStep[] = [];
-  let stepNumber = 0;
-  walkSteps(items, (step) => {
-    stepNumber += 1;
+  walkSteps(items, (step, _path, stepNumber) => {
     const screenId = step.screenId?.trim();
     if (!screenId) return;
     if (!byId.has(screenId)) missing.push({ stepNumber });
@@ -62,9 +96,7 @@ export function collectMissingHtmlProgramVideos(
 ): MissingHtmlVideoStep[] {
   const byId = new Map(screens.map((screen) => [screen.id, screen]));
   const missing: MissingHtmlVideoStep[] = [];
-  let stepNumber = 0;
-  walkSteps(items, (step) => {
-    stepNumber += 1;
+  walkSteps(items, (step, _path, stepNumber) => {
     const screenId = step.screenId?.trim();
     if (!screenId) return;
     const screen = byId.get(screenId);
@@ -91,7 +123,7 @@ export function validateHtmlProgramSteps(
   mode: ValidateHtmlProgramStepsMode = "publish",
 ): void {
   const byId = new Map(screens.map((screen) => [screen.id, screen]));
-  walkSteps(items, (step, path) => {
+  walkSteps(items, (step, path, stepNumber) => {
     if (!step.screenId?.trim()) throw new Error(`${path}.screenId가 필요해요`);
     const screen = byId.get(step.screenId);
     if (!screen) {
@@ -103,7 +135,9 @@ export function validateHtmlProgramSteps(
       throw new Error(`${path}.videoId가 필요해요 (영상 슬롯 화면)`);
     }
     if (!screen.hasVideoSlot && step.videoId?.trim()) {
-      throw new Error(`${path}는 영상 슬롯이 없는 화면이라 videoId를 넣을 수 없어요`);
+      const label = step.label?.trim();
+      const where = label ? `${stepNumber}단계 "${label}"` : `${stepNumber}단계`;
+      throw new Error(`${where}는 영상 슬롯이 없는 화면이라 videoId를 넣을 수 없어요`);
     }
   });
 }

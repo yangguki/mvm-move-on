@@ -25,7 +25,8 @@ function builderStepToShared(step, index, opts) {
     id: `step-${index}`,
     type: sharedType,
     durationSec,
-    videoId: step.videoId ?? undefined,
+    videoId:
+      opts.isHtmlSkin && screen && !screen.hasVideoSlot ? undefined : (step.videoId ?? undefined),
     screenId: step.screenId ?? undefined,
   };
   if (sharedType === "exercise" && repeatCount != null) out.repeatCount = repeatCount;
@@ -51,6 +52,27 @@ describe("builderStepToShared repeatCount", () => {
     );
     assert.equal(out.repeatCount, 3);
     assert.equal(out.durationSec, 12);
+  });
+
+  it("html 비영상 슬롯 화면이면 videoId를 payload에 넣지 않는다", () => {
+    const out = builderStepToShared(
+      {
+        kind: "countdown",
+        seconds: 10,
+        videoId: "v1",
+        screenId: "title",
+      },
+      0,
+      {
+        isHtmlSkin: true,
+        screens: [
+          { id: "title", hasVideoSlot: false },
+          { id: "main", hasVideoSlot: true },
+        ],
+        videos: [{ id: "v1", durationSec: 4 }],
+      },
+    );
+    assert.equal(out.videoId, undefined);
   });
 
   it("html 영상 슬롯 + 영상이 있으면 repeatCount·durationSec를 맞춘다", () => {

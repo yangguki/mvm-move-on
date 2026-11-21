@@ -1,6 +1,7 @@
 import type { Group, HtmlSkinScreensMap, Program, ProgramItem, ResolvedVoicePack, SkinKind, Step, Video } from "./program";
 import { VOICE_CUE_KEYS } from "./audio";
 import { STEP_DURATION_SEC_MAX, STEP_REPEAT_COUNT_MAX, STEP_REPEAT_COUNT_MIN } from "./step-duration";
+import { resolveExternalVideoThumbnail } from "./youtube";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -138,11 +139,14 @@ export function validateVideoInput(raw: unknown): Omit<Video, "id"> & { id?: str
   const height = asNumber(raw.height ?? 1080, "height");
   const durationSec = asNumber(raw.durationSec, "durationSec");
   if (!Number.isInteger(durationSec) || durationSec <= 0) throw new Error("durationSec는 1 이상 정수예요");
+  const url = asString(raw.url, "url");
+  const thumbnailRaw =
+    raw.thumbnailUrl != null ? asString(raw.thumbnailUrl, "thumbnailUrl") : undefined;
   const out: Omit<Video, "id"> & { id?: string } = {
     name: asString(raw.name, "name"),
-    url: asString(raw.url, "url"),
+    url,
     durationSec,
-    thumbnailUrl: asString(raw.thumbnailUrl ?? raw.url, "thumbnailUrl"),
+    thumbnailUrl: resolveExternalVideoThumbnail(url, thumbnailRaw ?? url),
     width,
     height,
   };

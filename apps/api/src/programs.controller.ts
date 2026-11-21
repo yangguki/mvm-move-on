@@ -25,6 +25,7 @@ import {
   type PublishedSnapshot,
   type SkinPublishMeta,
   type VideoMap,
+  stripStaleHtmlProgramVideoIds,
   validateHtmlProgramSteps,
   validateProgram,
 } from "@mvn/shared";
@@ -73,7 +74,14 @@ async function asDraft(
         where: { skinId: skinRow.id },
         select: { id: true, hasVideoSlot: true, hasNextVideoSlot: true, titleOnly: true },
       });
-      validateHtmlProgramSteps(checked.items, screenRows, "draft");
+      const screenRefs = screenRows.map((row) => ({
+        id: row.id,
+        hasVideoSlot: row.hasVideoSlot,
+        hasNextVideoSlot: row.hasNextVideoSlot,
+        titleOnly: row.titleOnly,
+      }));
+      checked.items = stripStaleHtmlProgramVideoIds(checked.items, screenRefs);
+      validateHtmlProgramSteps(checked.items, screenRefs, "draft");
       checked.skin.kind = "html";
     } else if (skinRow?.kind === "tokens") {
       checked.skin.kind = "tokens";

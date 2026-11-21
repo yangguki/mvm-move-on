@@ -11,6 +11,7 @@ import {
   parseHtmlSkinStepText,
   refreshHtmlSkinLiveTokens,
   sanitizeHtmlSkinContent,
+  stripStaleHtmlProgramVideoIds,
   validateHtmlProgramSteps,
   collectMissingHtmlProgramScreens,
   missingPublishScreensMessage,
@@ -90,9 +91,22 @@ describe("validateHtmlProgramSteps", () => {
     assert.doesNotThrow(() => validateHtmlProgramSteps(items, screens, "draft"));
   });
 
-  it("슬롯 없는 화면에 videoId 금지", () => {
+  it("슬롯 없는 화면에 videoId 금지 (publish)", () => {
+    const items = [{ id: "s1", type: "guide", durationSec: 10, screenId: "title", videoId: "v1", label: "타이틀" }];
+    assert.throws(() => validateHtmlProgramSteps(items, screens), /1단계 "타이틀".*videoId를 넣을 수 없어요/);
+  });
+
+  it("stripStaleHtmlProgramVideoIds removes stale videoId", () => {
     const items = [{ id: "s1", type: "guide", durationSec: 10, screenId: "title", videoId: "v1" }];
-    assert.throws(() => validateHtmlProgramSteps(items, screens), /videoId를 넣을 수 없어요/);
+    const stripped = stripStaleHtmlProgramVideoIds(items, screens);
+    assert.equal(stripped[0].videoId, undefined);
+    assert.doesNotThrow(() => validateHtmlProgramSteps(stripped, screens, "publish"));
+  });
+
+  it("draft: strip 후 슬롯 없는 화면 videoId 통과", () => {
+    const raw = [{ id: "s1", type: "guide", durationSec: 10, screenId: "title", videoId: "v1" }];
+    const items = stripStaleHtmlProgramVideoIds(raw, screens);
+    assert.doesNotThrow(() => validateHtmlProgramSteps(items, screens, "draft"));
   });
 
   it("유효한 html 스텝 통과", () => {
@@ -252,6 +266,18 @@ describe("buildHtmlSkinStepPreviewDocument", () => {
     assert.match(doc, /fallback-label/);
     assert.match(doc, /data-mvn-video/);
     assert.match(doc, /src="\/skins\/x\/a\.mp4"/);
+  });
+
+  it("embeds YouTube via youtube-nocookie iframe", () => {
+    const doc = buildHtmlSkinStepPreviewDocument({
+      screens,
+      screenId: "exercise",
+      tokens: { ...HTML_SKIN_SAMPLE_TOKENS, label: "YT", remainingSec: 30 },
+      videoUrl: "https://www.youtube.com/watch?v=M1bNbM_WBUw",
+      baseHref: "/",
+    });
+    assert.match(doc, /<iframe[^>]*youtube-nocookie\.com\/embed\/M1bNbM_WBUw/);
+    assert.doesNotMatch(doc, /<video src="https:\/\/www\.youtube\.com/);
   });
 });
 
