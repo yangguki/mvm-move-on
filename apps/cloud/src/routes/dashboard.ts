@@ -1,4 +1,4 @@
-import { buildAdminDashboardResponse } from "@mvn/shared";
+import { buildAdminDashboardResponse, deviceLastSeenLabel } from "@mvn/shared";
 import { query } from "../db";
 import type { CloudEnv } from "../env";
 import { json } from "../http";
@@ -9,14 +9,15 @@ type DeviceRow = {
   status: string;
   playing: string | null;
   offline: number;
-  seen_label: string;
+  last_seen_at: string | null;
   store_name: string;
 };
 
 export async function handleDashboard(_request: Request, env: CloudEnv): Promise<Response> {
+  const now = new Date();
   const deviceRows = await query<DeviceRow>(
     env.DB,
-    `SELECT d.code, d.name, d.status, d.playing, d.offline, d.seen_label, st.name AS store_name
+    `SELECT d.code, d.name, d.status, d.playing, d.offline, d.last_seen_at, st.name AS store_name
      FROM devices d
      INNER JOIN stores st ON st.id = d.store_id
      ORDER BY d.code ASC`,
@@ -27,7 +28,7 @@ export async function handleDashboard(_request: Request, env: CloudEnv): Promise
     status: row.status,
     playing: row.playing,
     offline: !!row.offline,
-    seenLabel: row.seen_label,
+    seenLabel: deviceLastSeenLabel(row.last_seen_at, now),
     store: { name: row.store_name },
   }));
 

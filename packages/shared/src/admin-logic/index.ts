@@ -1,5 +1,6 @@
 export * from "./builder-draft-snapshot";
 export * from "./catalog-aggregate";
+export * from "./device-last-seen";
 export * from "./html-skin-publish";
 export * from "./program-delete";
 export * from "./program-present";

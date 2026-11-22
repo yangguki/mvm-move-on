@@ -4,9 +4,10 @@ import type { CloudEnv } from "./env";
 import { nestError } from "./http";
 import { matchRoute, normalizeApiPath, ROUTES } from "./router-match";
 import { handleLogin, handleLogout, handleMe } from "./routes/auth";
-import { handleDeviceDelete, handleDeviceUpdate, handleDevicesList } from "./routes/devices";
+import { handleDevicesList } from "./routes/devices";
+import { handleDeviceDelete, handleDeviceUpdate } from "./routes/device-mutations";
 import { handleHealth } from "./routes/health";
-import { handleApprovePairing, handleAdminPairingSession } from "./routes/pairing-admin";
+import { handleApprovePairing } from "./routes/pairing-admin";
 import {
   handlePlayerCodeStatus,
   handlePlayerProgramDetail,
@@ -99,7 +100,6 @@ const HANDLERS: Record<string, RouteHandler> = {
   "devices-list": (req, env) => handleDevicesList(req, env),
   "devices-update": (req, env, _path, params) => handleDeviceUpdate(req, env, params.id!),
   "devices-delete": (req, env, _path, params) => handleDeviceDelete(req, env, params.id!),
-  "pairing-sessions": (req, env) => handleAdminPairingSession(req, env),
   "approve-pairing": (req, env) => handleApprovePairing(req, env),
   "player-code": (req, env) => handlePlayerRequestCode(req, env),
   "player-code-status": (req, env, _path, params) => handlePlayerCodeStatus(req, env, params.code!),

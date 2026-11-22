@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Check, ChevronDown, Download, Ellipsis, Link2, ListVideo, Monitor, MonitorOff, Palette, Power, RotateCw, Search, X } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { Check, Download, Ellipsis, ListVideo, Monitor, MonitorOff, Palette, Power, RotateCw, Search, X } from "lucide-react";
 import { ApiError, api } from "@/lib/api";
 
 type Device = {
@@ -22,8 +23,9 @@ type Device = {
   offline: boolean;
 };
 
+type Store = { id: string; name: string; code: string; isActive: boolean };
+
 type Summary = { total: number; playing: number; idle: number; updating: number; offline: number };
-type Store = { id: string; name: string; code: string };
 
 const FILTERS = [
   ["", "전체", "total"],
@@ -36,14 +38,20 @@ const FILTERS = [
 export function DevicesScreen() {
   const [items, setItems] = useState<Device[]>([]);
   const [summary, setSummary] = useState<Summary>({ total: 0, playing: 0, idle: 0, updating: 0, offline: 0 });
+  const [stores, setStores] = useState<Store[]>([]);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
-  const [stores, setStores] = useState<Store[]>([]);
-  const [storeId, setStoreId] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [gap, setGap] = useState("");
+  const [flash, setFlash] = useState("");
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [renameDevice, setRenameDevice] = useState<Device | null>(null);
+  const [renameName, setRenameName] = useState("");
+  const [moveDevice, setMoveDevice] = useState<Device | null>(null);
+  const [moveStoreId, setMoveStoreId] = useState("");
+  const [deleteDevice, setDeleteDevice] = useState<Device | null>(null);
 
   async function load(nextStatus = status, nextQuery = query) {
     const params = new URLSearchParams();
@@ -54,25 +62,100 @@ export function DevicesScreen() {
     setItems(data.items);
   }
 
+  async function loadStores() {
+    const data = await api<{ items: Store[] }>("/admin/v1/stores");
+    setStores(data.items.filter((s) => s.isActive));
+  }
+
   useEffect(() => {
     void load().catch((caught) => setError(caught instanceof ApiError ? caught.message : "TV 목록을 불러오지 못했어요"));
-    void api<{ items: Store[] }>("/admin/v1/stores").then((data) => {
-      setStores(data.items);
-      setStoreId(data.items[0]?.id ?? "");
-    });
+    void loadStores().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function pair() {
-    setError("");
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function showFlash(msg: string, isError = false) {
+    if (isError) setError(msg);
+    else {
+      setError("");
+      setFlash(msg);
+      setTimeout(() => setFlash(""), 3000);
+    }
+  }
+
+  function openRename(device: Device) {
+    setRenameDevice(device);
+    setRenameName(device.name);
+    setMenuOpen(null);
+  }
+
+  function openMove(device: Device) {
+    setMoveDevice(device);
+    setMoveStoreId(device.store.id);
+    setMenuOpen(null);
+  }
+
+  function openDelete(device: Device) {
+    setDeleteDevice(device);
+    setMenuOpen(null);
+  }
+
+  async function saveRename(event: FormEvent) {
+    event.preventDefault();
+    if (!renameDevice) return;
+    const trimmed = renameName.trim();
+    if (!trimmed) {
+      showFlash("TV 이름을 입력해 주세요", true);
+      return;
+    }
     try {
-      const result = await api<{ code: string; store: { name: string } }>("/admin/v1/pairing-sessions", {
-        method: "POST",
-        body: JSON.stringify({ storeId }),
+      await api(`/admin/v1/devices/${renameDevice.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: trimmed }),
       });
-      setCode(`${result.store.name} 연결 코드 ${result.code} · 10분 동안 유효해요`);
+      setRenameDevice(null);
+      await load();
+      showFlash("이름을 변경했어요");
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "연결 코드를 만들지 못했어요");
+      showFlash(caught instanceof ApiError ? caught.message : "이름을 변경하지 못했어요", true);
+    }
+  }
+
+  async function saveMove(event: FormEvent) {
+    event.preventDefault();
+    if (!moveDevice || !moveStoreId) return;
+    try {
+      await api(`/admin/v1/devices/${moveDevice.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ storeId: moveStoreId }),
+      });
+      setMoveDevice(null);
+      await load();
+      showFlash("지점을 이동했어요");
+    } catch (caught) {
+      showFlash(caught instanceof ApiError ? caught.message : "지점을 이동하지 못했어요", true);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteDevice) return;
+    try {
+      await api(`/admin/v1/devices/${deleteDevice.id}`, { method: "DELETE" });
+      setDeleteDevice(null);
+      await load();
+      showFlash("TV를 삭제했어요");
+    } catch (caught) {
+      showFlash(caught instanceof ApiError ? caught.message : "TV를 삭제하지 못했어요", true);
+      setDeleteDevice(null);
     }
   }
 
@@ -88,15 +171,14 @@ export function DevicesScreen() {
             <Download className="i" aria-hidden />
             내보내기
           </button>
-          <button type="button" className="btn btn-primary" onClick={() => void pair()}>
-            <Link2 className="i" aria-hidden />
-            TV 연결하기
-          </button>
+          <Link href="/stores/" className="btn btn-primary">
+            지점에서 TV 승인
+          </Link>
         </div>
       </div>
       {error ? <p className="form-error">{error}</p> : null}
+      {flash ? <p className="card pair-box" style={{ marginBottom: 16, color: "var(--ok-700)" }}>{flash}</p> : null}
       {gap ? <p className="form-error">{gap}</p> : null}
-      {code ? <p className="card pair-box">{code}</p> : null}
       <div className="filters">
         <div className="seg">
           {FILTERS.map(([value, label, key]) => (
@@ -124,19 +206,6 @@ export function DevicesScreen() {
           <Search className="i i-sm" aria-hidden />
           <input className="input" style={{ height: 32, fontSize: 13 }} placeholder="TV 이름 또는 코드" value={query} onChange={(event) => setQuery(event.target.value)} />
         </form>
-        <label className="select">
-          <span>
-            <span className="k">지점</span>
-          </span>
-          <select value={storeId} onChange={(event) => setStoreId(event.target.value)} aria-label="연결할 지점" style={{ border: 0, background: "transparent", font: "inherit" }}>
-            {stores.map((store) => (
-              <option key={store.id} value={store.id}>
-                {store.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="i i-sm" aria-hidden />
-        </label>
         <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => void load()}>
           <RotateCw className="i" aria-hidden />
           새로고침
@@ -207,15 +276,16 @@ export function DevicesScreen() {
                 <td className="num" style={row.seenAlert ? { color: "var(--err-700)", fontWeight: 600 } : undefined}>
                   {row.seenLabel}
                 </td>
-                <td style={{ textAlign: "right" }}>
-                  {row.guide ? (
-                    <button type="button" className="btn btn-secondary btn-sm" style={{ height: 28 }} onClick={() => void pair()}>
-                      연결 안내
-                    </button>
-                  ) : (
-                    <button type="button" className="icon-btn" aria-label={`${row.code} 더보기`} onClick={() => setGap("기기별 메뉴 API가 아직 없어요")}>
-                      <Ellipsis className="i" aria-hidden />
-                    </button>
+                <td style={{ textAlign: "right", position: "relative" }}>
+                  <button type="button" className="icon-btn" aria-label={`${row.code} 더보기`} onClick={() => setMenuOpen(menuOpen === row.id ? null : row.id)}>
+                    <Ellipsis className="i" aria-hidden />
+                  </button>
+                  {menuOpen === row.id && (
+                    <div ref={menuRef} className="dropdown-menu" style={{ position: "absolute", right: 0, top: "100%", zIndex: 50 }}>
+                      <button type="button" onClick={() => openRename(row)}>이름 변경</button>
+                      <button type="button" onClick={() => openMove(row)}>지점 이동</button>
+                      <button type="button" onClick={() => openDelete(row)} style={{ color: "var(--err-700)" }}>삭제</button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -249,6 +319,91 @@ export function DevicesScreen() {
           </button>
         </div>
       ) : null}
+      {renameDevice && (
+        <div className="modal-backdrop" onClick={() => setRenameDevice(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>TV 이름 변경</h2>
+              <button type="button" className="icon-btn" onClick={() => setRenameDevice(null)} aria-label="닫기">
+                <X className="i" aria-hidden />
+              </button>
+            </div>
+            <form onSubmit={(event) => void saveRename(event)}>
+              <div className="modal-body">
+                <div className="field">
+                  <label>TV 이름</label>
+                  <input className="input" value={renameName} onChange={(e) => setRenameName(e.target.value)} required autoFocus />
+                </div>
+                <p className="cell-sub mono">{renameDevice.code}</p>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn" onClick={() => setRenameDevice(null)}>취소</button>
+                <button type="submit" className="btn btn-primary">저장</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {moveDevice && (
+        <div className="modal-backdrop" onClick={() => setMoveDevice(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>지점 이동</h2>
+              <button type="button" className="icon-btn" onClick={() => setMoveDevice(null)} aria-label="닫기">
+                <X className="i" aria-hidden />
+              </button>
+            </div>
+            <form onSubmit={(event) => void saveMove(event)}>
+              <div className="modal-body">
+                <p style={{ marginBottom: 12 }}>
+                  <strong>{moveDevice.name}</strong>
+                  <span className="cell-sub mono" style={{ marginLeft: 8 }}>{moveDevice.code}</span>
+                </p>
+                <div className="field">
+                  <label>이동할 지점</label>
+                  <select className="input" value={moveStoreId} onChange={(e) => setMoveStoreId(e.target.value)} required>
+                    {stores.map((store) => (
+                      <option key={store.id} value={store.id}>{store.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn" onClick={() => setMoveDevice(null)}>취소</button>
+                <button type="submit" className="btn btn-primary">이동</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {deleteDevice && (
+        <div className="modal-backdrop" onClick={() => setDeleteDevice(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>TV 삭제</h2>
+              <button type="button" className="icon-btn" onClick={() => setDeleteDevice(null)} aria-label="닫기">
+                <X className="i" aria-hidden />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>
+                <strong>{deleteDevice.name}</strong>
+                <span className="cell-sub mono" style={{ marginLeft: 8 }}>{deleteDevice.code}</span>
+                을(를) 삭제할까요?
+              </p>
+              <p className="subtle" style={{ marginTop: 12 }}>
+                TV는 페어링 코드 화면으로 돌아가요. 관리자에서 다시 승인해야 연결됩니다.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn" onClick={() => setDeleteDevice(null)}>취소</button>
+              <button type="button" className="btn btn-primary" style={{ background: "var(--err-700)" }} onClick={() => void confirmDelete()}>
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

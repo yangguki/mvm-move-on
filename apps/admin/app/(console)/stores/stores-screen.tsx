@@ -37,6 +37,7 @@ export function StoresScreen() {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [pairingCode, setPairingCode] = useState("");
+  const [pairingStoreId, setPairingStoreId] = useState("");
   const [pairingStatus, setPairingStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [pairingMsg, setPairingMsg] = useState("");
 
@@ -140,20 +141,30 @@ export function StoresScreen() {
 
   async function approvePairing(event: FormEvent) {
     event.preventDefault();
+    if (!pairingStoreId) {
+      setPairingStatus("error");
+      setPairingMsg("지점을 선택해 주세요");
+      return;
+    }
     if (!/^\d{6}$/.test(pairingCode)) {
       setPairingStatus("error");
       setPairingMsg("6자리 숫자 코드가 필요해요");
       return;
     }
+    const chosenStore = items.find((s) => s.id === pairingStoreId);
     setPairingStatus("loading");
     setPairingMsg("");
     try {
-      const res = await api<{ ok: boolean; device: { code: string; name: string } }>("/admin/v1/approve-pairing", {
-        method: "POST",
-        body: JSON.stringify({ code: pairingCode }),
-      });
+      const res = await api<{ ok: boolean; device: { code: string; name: string }; store?: { name: string } }>(
+        "/admin/v1/approve-pairing",
+        {
+          method: "POST",
+          body: JSON.stringify({ code: pairingCode, storeId: pairingStoreId }),
+        },
+      );
       setPairingStatus("success");
-      setPairingMsg(`TV 승인 완료: ${res.device.code}`);
+      const storeName = res.store?.name ?? chosenStore?.name ?? "";
+      setPairingMsg(`TV 승인 완료 (${storeName}): ${res.device.code}`);
       setPairingCode("");
       await load();
       setTimeout(() => { setPairingStatus("idle"); setPairingMsg(""); }, 3000);
@@ -182,6 +193,21 @@ export function StoresScreen() {
       {error ? <p className="form-error">{error}</p> : null}
       <form className="card pair-box" onSubmit={(event) => void approvePairing(event)} style={{ marginBottom: 16 }}>
         <span style={{ fontWeight: 600, marginRight: 8 }}>TV 승인</span>
+        <select
+          className="input"
+          style={{ width: 160 }}
+          aria-label="승인할 지점"
+          value={pairingStoreId}
+          onChange={(e) => setPairingStoreId(e.target.value)}
+          required
+        >
+          <option value="">지점 선택</option>
+          {items.filter((s) => s.isActive).map((store) => (
+            <option key={store.id} value={store.id}>
+              {store.name}
+            </option>
+          ))}
+        </select>
         <input
           className="input"
           style={{ width: 120 }}

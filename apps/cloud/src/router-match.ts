@@ -24,7 +24,6 @@ export const STATIC_ROUTES: Omit<RouteDef, "paramNames">[] = [
   { method: "GET", pattern: /^\/api\/admin\/v1\/stores$/, auth: "admin", name: "stores-list" },
   { method: "POST", pattern: /^\/api\/admin\/v1\/stores$/, auth: "admin", name: "stores-create" },
   { method: "GET", pattern: /^\/api\/admin\/v1\/devices$/, auth: "admin", name: "devices-list" },
-  { method: "POST", pattern: /^\/api\/admin\/v1\/pairing-sessions$/, auth: "admin", name: "pairing-sessions" },
   { method: "POST", pattern: /^\/api\/admin\/v1\/approve-pairing$/, auth: "admin", name: "approve-pairing" },
   { method: "GET", pattern: /^\/api\/admin\/v1\/skins$/, auth: "admin", name: "skins-list" },
   { method: "POST", pattern: /^\/api\/admin\/v1\/skins$/, auth: "admin", name: "skins-create" },

@@ -95,6 +95,7 @@ export type CloudDeviceRow = {
   progress: number | null;
   appVersion: string;
   versionWarn: boolean;
+  lastSeenAt: string | null;
   seenLabel: string;
   seenAlert: boolean;
   guide: boolean;

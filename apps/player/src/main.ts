@@ -79,13 +79,50 @@ function hideError() {
   errorOverlay.classList.remove("show");
 }
 
+class PlayerApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+  ) {
+    super(message);
+  }
+}
+
+function revokeDeviceSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  deviceToken = null;
+  if (programPollTimer != null) {
+    clearInterval(programPollTimer);
+    programPollTimer = null;
+  }
+  if (pairingPollTimer != null) {
+    clearInterval(pairingPollTimer);
+    pairingPollTimer = null;
+  }
+  cleanup();
+  programs = [];
+  selectedProgram = null;
+  showScreen("pair");
+  initPairing();
+}
+
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (deviceToken) headers["X-Device-Token"] = deviceToken;
-  const res = await fetch(playerPath(path), { ...options, headers: { ...headers, ...options.headers } });
+  let res: Response;
+  try {
+    res = await fetch(playerPath(path), { ...options, headers: { ...headers, ...options.headers } });
+  } catch (err) {
+    throw new PlayerApiError(err instanceof Error ? err.message : "네트워크 오류", null);
+  }
+  if (res.status === 401) {
+    revokeDeviceSession();
+    const body = await res.json().catch(() => ({}));
+    throw new PlayerApiError((body as { message?: string }).message || "기기 인증이 필요해요", 401);
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as { message?: string }).message || `HTTP ${res.status}`);
+    throw new PlayerApiError((body as { message?: string }).message || `HTTP ${res.status}`, res.status);
   }
   return res.json();
 }
@@ -151,6 +188,11 @@ async function loadPrograms() {
     programs = res.items;
     renderPrograms();
   } catch (err) {
+    if (err instanceof PlayerApiError && err.status === 401) throw err;
+    if (err instanceof PlayerApiError && err.status === null) {
+      showError("연결할 수 없어요. 네트워크를 확인해 주세요");
+      return;
+    }
     showError(err instanceof Error ? err.message : "프로그램 목록 불러오기 실패");
   } finally {
     showLoading(false);
@@ -161,6 +203,15 @@ function renderPrograms() {
   const list = $("program-list");
   list.innerHTML = "";
   const playBtn = $<HTMLButtonElement>("play-btn");
+  if (!programs.length) {
+    const empty = document.createElement("p");
+    empty.className = "program-empty";
+    empty.textContent = "이 지점에 지정된 프로그램이 없어요";
+    list.appendChild(empty);
+    playBtn.disabled = true;
+    selectedProgram = null;
+    return;
+  }
   programs.forEach((prog, idx) => {
     const item = document.createElement("div");
     item.className = "program-item";
@@ -270,13 +321,22 @@ function applyProgramUpdate(detail: ProgramDetail) {
 }
 
 async function pollTrackedProgramVersion() {
+  if (currentScreen === "list" && !pollTarget()) {
+    try {
+      await api<{ items: Program[] }>("/programs");
+    } catch (err) {
+      if (err instanceof PlayerApiError && err.status === 401) return;
+    }
+    return;
+  }
   const target = pollTarget();
   if (!target) return;
   try {
     const detail = enrichPlayerProgram(stripAudioForCloud(await api<ProgramDetail>(`/programs/${target.id}`)));
     if (detail.publishedVersion === target.version) return;
     await onTrackedProgramRepublished(detail);
-  } catch {
+  } catch (err) {
+    if (err instanceof PlayerApiError && err.status === 401) return;
     // keep UI on transient errors
   }
 }
@@ -321,6 +381,7 @@ async function startPlay() {
     const detail = enrichPlayerProgram(stripAudioForCloud(await api<ProgramDetail>(`/programs/${selectedProgram.id}`)));
     beginPlayWithDetail(detail);
   } catch (err) {
+    if (err instanceof PlayerApiError && err.status === 401) return;
     showError(err instanceof Error ? err.message : "프로그램 불러오기 실패");
   } finally {
     showLoading(false);
@@ -419,7 +480,16 @@ function init() {
         showScreen("list");
         ensureProgramPoll();
       })
-      .catch(() => showScreen("pair"));
+      .catch((err) => {
+        if (err instanceof PlayerApiError && err.status === 401) return;
+        if (err instanceof PlayerApiError && err.status === null) {
+          showScreen("list");
+          showError("연결할 수 없어요. 네트워크를 확인해 주세요");
+          return;
+        }
+        showScreen("pair");
+        initPairing();
+      });
   } else {
     initPairing();
   }

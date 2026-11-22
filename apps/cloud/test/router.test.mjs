@@ -18,4 +18,5 @@ test("matchRoute", () => {
   assert.equal(matchRoute("POST", "/api/player/v1/code")?.name, "player-code");
   assert.equal(matchRoute("GET", "/api/player/v1/programs")?.auth, "player");
   assert.equal(matchRoute("GET", "/api/player/v1/code/123456/status")?.name, "player-code-status");
+  assert.equal(matchRoute("POST", "/api/admin/v1/pairing-sessions"), undefined);
 });

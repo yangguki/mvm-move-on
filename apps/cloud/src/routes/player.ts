@@ -1,16 +1,16 @@
 import { presentPlayerProgramSnapshot, type PublishedSnapshot } from "@mvn/shared";
-import { readDeviceTokenHeader, signDeviceToken, verifyDeviceToken } from "../auth/device-token";
-import { first, parseJsonColumn, query, run } from "../db";
+import { signDeviceToken } from "../auth/device-token";
+import { first, parseJsonColumn, run } from "../db";
 import type { CloudEnv } from "../env";
 import { json, nestError } from "../http";
 import { isUniqueViolation, PAIRING_TTL_MS, randomPairingCode } from "../pairing-code";
+import {
+  handlePlayerProgramsList,
+  requirePlayerDevice,
+  storeAssignedPublishedProgramId,
+} from "./player-device";
 
-async function requireDevice(request: Request, env: CloudEnv): Promise<Response | { payload: { storeId: string; deviceId: string } }> {
-  const token = readDeviceTokenHeader(request);
-  const payload = token ? await verifyDeviceToken(env, token) : null;
-  if (!payload) return nestError("기기 인증이 필요해요", 401);
-  return { payload };
-}
+export { handlePlayerProgramsList };
 
 export async function handlePlayerRequestCode(_request: Request, env: CloudEnv): Promise<Response> {
   const now = new Date().toISOString();
@@ -59,35 +59,13 @@ export async function handlePlayerCodeStatus(_request: Request, env: CloudEnv, c
   return json({ status: "pending", expiresAt: session.expires_at });
 }
 
-export async function handlePlayerProgramsList(request: Request, env: CloudEnv): Promise<Response> {
-  const auth = await requireDevice(request, env);
-  if (auth instanceof Response) return auth;
-  const rows = await query<{ id: string; name: string; published_version: number; updated_at: string }>(
-    env.DB,
-    `SELECT id, name, published_version, updated_at FROM programs WHERE published_version IS NOT NULL ORDER BY updated_at DESC`,
-  );
-  const items = await Promise.all(
-    rows.map(async (prog) => {
-      const version = await first<{ published_at: string }>(
-        env.DB,
-        `SELECT published_at FROM program_versions WHERE program_id = ? AND version = ?`,
-        prog.id,
-        prog.published_version,
-      );
-      return {
-        id: prog.id,
-        name: prog.name,
-        publishedVersion: prog.published_version,
-        publishedAt: version?.published_at ?? prog.updated_at,
-      };
-    }),
-  );
-  return json({ items });
-}
-
 export async function handlePlayerProgramDetail(request: Request, env: CloudEnv, id: string): Promise<Response> {
-  const auth = await requireDevice(request, env);
+  const auth = await requirePlayerDevice(request, env);
   if (auth instanceof Response) return auth;
+  const assignedId = await storeAssignedPublishedProgramId(env, auth.storeId);
+  if (!assignedId || assignedId !== id) {
+    return nestError("발행된 프로그램을 찾을 수 없어요", 404);
+  }
   const program = await first<{ id: string; name: string; published_version: number | null; updated_at: string }>(
     env.DB,
     `SELECT id, name, published_version, updated_at FROM programs WHERE id = ?`,
