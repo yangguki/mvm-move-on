@@ -1,7 +1,9 @@
 import {
   buildHtmlSkinSrcdoc,
+  createPlaybackCountdownController,
   parseHtmlSkinStepText,
   parseYouTubeVideoId,
+  PLAYBACK_COUNTDOWN_FALLBACK_MS,
   resolveStepScreen,
   youtubeThumbnailUrl,
   type HtmlSkinScreensMap,
@@ -66,6 +68,16 @@ export class HtmlSkinPlayer {
   private currentScreen: SkinScreenSnapshot | null = null;
   private currentItem: PlayItem | null = null;
   private mountGeneration = 0;
+  private playbackCountdownStartGen = 0;
+  private readonly playbackCountdown = createPlaybackCountdownController({
+    fallbackMs: PLAYBACK_COUNTDOWN_FALLBACK_MS,
+    schedule: (fn, ms) => window.setTimeout(fn, ms),
+    cancel: (id) => window.clearTimeout(id as number),
+    onStart: () => {
+      if (this.playbackCountdownStartGen !== this.mountGeneration) return;
+      if (!this.paused) this.startTickTimer();
+    },
+  });
 
   constructor(wrap: HTMLElement, callbacks: HtmlSkinPlayerCallbacks) {
     this.wrap = wrap;
@@ -77,6 +89,7 @@ export class HtmlSkinPlayer {
   }
 
   destroy(): void {
+    this.playbackCountdown.dispose();
     this.stopTimer();
     this.clearSlotMounts();
     if (this.iframe) this.iframe.remove();
@@ -96,7 +109,7 @@ export class HtmlSkinPlayer {
     this.paused = paused;
     if (paused) {
       this.stopTimer();
-    } else {
+    } else if (this.playbackCountdown.hasStarted()) {
       this.startTickTimer();
     }
     this.slotMounts.forEach((mount) => {
@@ -235,6 +248,8 @@ export class HtmlSkinPlayer {
     }
     this.index = playIndex;
     this.mountGeneration += 1;
+    this.playbackCountdown.reset();
+    this.playbackCountdownStartGen = this.mountGeneration;
     this.stopTimer();
     this.clearSlotMounts();
     const item = items[playIndex];
@@ -269,7 +284,8 @@ export class HtmlSkinPlayer {
     this.iframe.onload = () => {
       this.postTokens(tokens);
       this.mountSlots(item, screen);
-      if (!this.paused) this.startTickTimer();
+      const waitForPlayback = !!(screen.hasVideoSlot && item.video?.url);
+      this.playbackCountdown.arm({ waitForPlayback });
     };
   }
 
@@ -302,7 +318,12 @@ export class HtmlSkinPlayer {
       if (ytId) {
         void this.mountMainYouTube(ytId, this.mountGeneration);
       } else {
+        const gen = this.mountGeneration;
         const main = this.createSlotVideo(url, "main");
+        main.addEventListener("playing", () => {
+          if (gen !== this.mountGeneration) return;
+          this.playbackCountdown.notifyPlaybackStarted();
+        });
         this.wrap.appendChild(main);
         this.slotMounts.push({ slot: "main", el: main, kind: "video" });
       }
@@ -361,6 +382,9 @@ export class HtmlSkinPlayer {
           },
           onStateChange: (event) => {
             if (generation !== this.mountGeneration) return;
+            if (event.data === yt.PlayerState.PLAYING) {
+              this.playbackCountdown.notifyPlaybackStarted();
+            }
             if (event.data === yt.PlayerState.ENDED) {
               event.target.seekTo(0, true);
               event.target.playVideo();
