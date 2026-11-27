@@ -58,6 +58,15 @@ export function youtubeNocookieEmbedUrl(id: string): string {
   return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?${q}`;
 }
 
+/** object-fit:cover-style scale for a 16:9 iframe inside a slot box (px). */
+export function youtubeCoverTransform(slotW: number, slotH: number): { scale: number } {
+  if (slotW <= 0 || slotH <= 0) return { scale: 1 };
+  const slotAR = slotW / slotH;
+  const videoAR = 16 / 9;
+  const scale = slotAR > videoAR ? slotAR / videoAR : videoAR / slotAR;
+  return { scale: Math.max(1, scale) };
+}
+
 export function resolveExternalVideoThumbnail(url: string, thumbnailUrl?: string): string {
   const id = parseYouTubeVideoId(url);
   if (id && (!thumbnailUrl?.trim() || thumbnailUrl.trim() === url.trim())) {

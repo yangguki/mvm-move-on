@@ -98,12 +98,3 @@ export function youtubePlayerVars(): Record<string, number | string> {
     cc_load_policy: 0,
   };
 }
-
-/** object-fit:cover-style scale for a 16:9 iframe inside a slot box (px). */
-export function youtubeCoverTransform(slotW: number, slotH: number): { scale: number } {
-  if (slotW <= 0 || slotH <= 0) return { scale: 1 };
-  const slotAR = slotW / slotH;
-  const videoAR = 16 / 9;
-  const scale = slotAR > videoAR ? slotAR / videoAR : videoAR / slotAR;
-  return { scale: Math.max(1, scale) };
-}

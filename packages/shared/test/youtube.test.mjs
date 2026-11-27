@@ -4,6 +4,7 @@ import {
   isYouTubeUrl,
   parseYouTubeVideoId,
   resolveExternalVideoThumbnail,
+  youtubeCoverTransform,
   youtubeNocookieEmbedUrl,
   youtubeThumbnailUrl,
 } from "../dist/youtube.js";
@@ -35,6 +36,19 @@ describe("isYouTubeUrl", () => {
   it("matches parseYouTubeVideoId", () => {
     assert.equal(isYouTubeUrl(`https://youtu.be/${SAMPLE}`), true);
     assert.equal(isYouTubeUrl("https://cdn.example/v.mp4"), false);
+  });
+});
+
+describe("youtubeCoverTransform", () => {
+  it("scales up when slot aspect differs from 16:9", () => {
+    const wide = youtubeCoverTransform(640, 360);
+    assert.equal(wide.scale, 1);
+    const tall = youtubeCoverTransform(360, 640);
+    assert.ok(tall.scale > 1);
+  });
+
+  it("returns 1 for non-positive dimensions", () => {
+    assert.equal(youtubeCoverTransform(0, 100).scale, 1);
   });
 });
 

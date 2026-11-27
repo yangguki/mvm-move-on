@@ -5,18 +5,14 @@ import {
   parseYouTubeVideoId,
   PLAYBACK_COUNTDOWN_FALLBACK_MS,
   resolveStepScreen,
+  youtubeCoverTransform,
   youtubeThumbnailUrl,
   type HtmlSkinScreensMap,
   type PlayItem,
   type PublishedSnapshot,
   type SkinScreenSnapshot,
 } from "@mvn/shared";
-import {
-  loadYouTubeIframeApi,
-  youtubeCoverTransform,
-  youtubePlayerVars,
-  type YouTubeIframeApi,
-} from "./youtube-iframe-api";
+import { loadYouTubeIframeApi, youtubePlayerVars, type YouTubeIframeApi } from "./youtube-iframe-api";
 
 type HtmlSkinProgram = PublishedSnapshot & {
   playItems: PlayItem[];
@@ -30,7 +26,12 @@ type SlotMount = {
   slot: "main" | "next";
   el: HTMLElement;
   kind: "video" | "youtube" | "thumbnail";
-  ytPlayer?: { destroy: () => void; pauseVideo: () => void; playVideo: () => void };
+  ytPlayer?: {
+    destroy: () => void;
+    pauseVideo: () => void;
+    playVideo: () => void;
+    getIframe?: () => HTMLIFrameElement;
+  };
 };
 
 const FALLBACK_HTML = `
@@ -344,10 +345,19 @@ export class HtmlSkinPlayer {
     this.positionSlotMounts();
   }
 
+  private deferAfterYtDestroy(): Promise<void> {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+  }
+
   private async mountMainYouTube(videoId: string, generation: number): Promise<void> {
-    const host = this.createYtHost("main");
-    this.wrap.appendChild(host);
-    const mount: SlotMount = { slot: "main", el: host, kind: "youtube" };
+    const { wrapper, target } = this.createYtSlotWrapper("main");
+    wrapper.appendChild(target);
+    this.wrap.appendChild(wrapper);
+    const mount: SlotMount = { slot: "main", el: wrapper, kind: "youtube" };
     this.slotMounts.push(mount);
     this.positionSlotMounts();
 
@@ -361,12 +371,15 @@ export class HtmlSkinPlayer {
     }
     if (generation !== this.mountGeneration) return;
 
+    await this.deferAfterYtDestroy();
+    if (generation !== this.mountGeneration) return;
+
     const slot = this.slotRects.main;
     const w = slot && slot.width > 0 ? Math.round(slot.width) : 640;
     const h = slot && slot.height > 0 ? Math.round(slot.height) : 360;
 
     try {
-      const player = new yt.Player(host, {
+      const player = new yt.Player(target, {
         host: "https://www.youtube-nocookie.com",
         videoId,
         width: w,
@@ -376,7 +389,8 @@ export class HtmlSkinPlayer {
           onReady: (event) => {
             if (generation !== this.mountGeneration) return;
             mount.ytPlayer = event.target;
-            this.applyYtCover(host, w, h);
+            const iframe = event.target.getIframe?.() ?? mount.el.querySelector("iframe");
+            this.applyYtCover(mount.el as HTMLDivElement, w, h, iframe);
             if (!this.paused) event.target.playVideo();
             else event.target.pauseVideo();
           },
@@ -418,31 +432,44 @@ export class HtmlSkinPlayer {
     this.positionSlotMounts();
   }
 
-  private createYtHost(slot: "main" | "next"): HTMLDivElement {
-    const host = document.createElement("div");
-    host.dataset.slot = slot;
-    host.dataset.kind = "youtube";
-    host.style.display = "none";
-    host.style.position = "absolute";
-    host.style.pointerEvents = "none";
-    host.style.zIndex = "2";
-    host.style.overflow = "hidden";
-    return host;
+  private createYtSlotWrapper(slot: "main" | "next"): {
+    wrapper: HTMLDivElement;
+    target: HTMLDivElement;
+  } {
+    const wrapper = document.createElement("div");
+    wrapper.dataset.slot = slot;
+    wrapper.dataset.kind = "youtube";
+    wrapper.style.display = "none";
+    wrapper.style.position = "absolute";
+    wrapper.style.pointerEvents = "none";
+    wrapper.style.zIndex = "2";
+    wrapper.style.overflow = "hidden";
+
+    const target = document.createElement("div");
+    target.dataset.ytPlaceholder = "1";
+    target.style.width = "100%";
+    target.style.height = "100%";
+    return { wrapper, target };
   }
 
-  private applyYtCover(host: HTMLDivElement, slotW: number, slotH: number): void {
-    const iframe = host.querySelector("iframe");
-    if (!iframe) return;
+  private applyYtCover(
+    wrapper: HTMLDivElement,
+    slotW: number,
+    slotH: number,
+    iframe?: HTMLIFrameElement | null,
+  ): void {
+    const frame = iframe ?? wrapper.querySelector("iframe");
+    if (!frame) return;
     const { scale } = youtubeCoverTransform(slotW, slotH);
-    iframe.style.position = "absolute";
-    iframe.style.left = "50%";
-    iframe.style.top = "50%";
-    iframe.style.width = "100%";
-    iframe.style.height = "100%";
-    iframe.style.transform = `translate(-50%, -50%) scale(${scale})`;
-    iframe.style.transformOrigin = "center center";
-    iframe.style.border = "0";
-    iframe.style.pointerEvents = "none";
+    frame.style.position = "absolute";
+    frame.style.left = "50%";
+    frame.style.top = "50%";
+    frame.style.width = "100%";
+    frame.style.height = "100%";
+    frame.style.transform = `translate(-50%, -50%) scale(${scale})`;
+    frame.style.transformOrigin = "center center";
+    frame.style.border = "0";
+    frame.style.pointerEvents = "none";
   }
 
   private resolveMediaUrl(url: string): string {
@@ -529,11 +556,16 @@ export class HtmlSkinPlayer {
       mount.el.style.top = `${oy + slot.top * s}px`;
       mount.el.style.width = `${w}px`;
       mount.el.style.height = `${h}px`;
-      if (mount.kind === "video") {
-        (mount.el as HTMLVideoElement).style.objectFit = "cover";
+      if (mount.kind === "video" || mount.kind === "thumbnail") {
+        const media = mount.el as HTMLVideoElement | HTMLImageElement;
+        media.style.width = "100%";
+        media.style.height = "100%";
+        media.style.objectFit = "cover";
       }
       if (mount.kind === "youtube") {
-        this.applyYtCover(mount.el as HTMLDivElement, Math.round(slot.width), Math.round(slot.height));
+        const wrapper = mount.el as HTMLDivElement;
+        const iframe = mount.ytPlayer?.getIframe?.() ?? wrapper.querySelector("iframe");
+        this.applyYtCover(wrapper, Math.round(slot.width), Math.round(slot.height), iframe);
       }
     });
   }
