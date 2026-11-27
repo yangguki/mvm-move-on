@@ -4,9 +4,12 @@ import {
   parseHtmlSkinStepText,
   parseYouTubeVideoId,
   PLAYBACK_COUNTDOWN_FALLBACK_MS,
+  computeHtmlSkinSlotOverlayBox,
+  directMediaSlotOverlayCss,
   resolveStepScreen,
   youtubeCoverTransform,
   youtubeThumbnailUrl,
+  youtubeWrapperSlotOverlayCss,
   type HtmlSkinScreensMap,
   type PlayItem,
   type PublishedSnapshot,
@@ -495,6 +498,8 @@ export class HtmlSkinPlayer {
     video.style.position = "absolute";
     video.style.pointerEvents = "none";
     video.style.zIndex = "2";
+    video.style.overflow = "hidden";
+    video.style.objectFit = "cover";
     video.addEventListener(
       "loadeddata",
       () => {
@@ -516,6 +521,7 @@ export class HtmlSkinPlayer {
     img.style.position = "absolute";
     img.style.pointerEvents = "none";
     img.style.zIndex = "2";
+    img.style.overflow = "hidden";
     img.style.objectFit = "cover";
     img.referrerPolicy = "strict-origin-when-cross-origin";
     return img;
@@ -549,21 +555,26 @@ export class HtmlSkinPlayer {
         mount.el.style.display = "none";
         return;
       }
-      const w = slot.width * s;
-      const h = slot.height * s;
-      mount.el.style.display = "block";
-      mount.el.style.left = `${ox + slot.left * s}px`;
-      mount.el.style.top = `${oy + slot.top * s}px`;
-      mount.el.style.width = `${w}px`;
-      mount.el.style.height = `${h}px`;
+      const box = computeHtmlSkinSlotOverlayBox(ox, oy, slot.left, slot.top, slot.width, slot.height, s);
       if (mount.kind === "video" || mount.kind === "thumbnail") {
+        const css = directMediaSlotOverlayCss(box);
         const media = mount.el as HTMLVideoElement | HTMLImageElement;
-        media.style.width = "100%";
-        media.style.height = "100%";
-        media.style.objectFit = "cover";
-      }
-      if (mount.kind === "youtube") {
+        media.style.display = css.display ?? "block";
+        media.style.left = css.left ?? "0";
+        media.style.top = css.top ?? "0";
+        media.style.width = css.width ?? "0";
+        media.style.height = css.height ?? "0";
+        media.style.overflow = css.overflow ?? "hidden";
+        media.style.objectFit = (css.objectFit as CSSStyleDeclaration["objectFit"]) ?? "cover";
+      } else if (mount.kind === "youtube") {
         const wrapper = mount.el as HTMLDivElement;
+        const css = youtubeWrapperSlotOverlayCss(box);
+        wrapper.style.display = css.display ?? "block";
+        wrapper.style.left = css.left ?? "0";
+        wrapper.style.top = css.top ?? "0";
+        wrapper.style.width = css.width ?? "0";
+        wrapper.style.height = css.height ?? "0";
+        wrapper.style.overflow = css.overflow ?? "hidden";
         const iframe = mount.ytPlayer?.getIframe?.() ?? wrapper.querySelector("iframe");
         this.applyYtCover(wrapper, Math.round(slot.width), Math.round(slot.height), iframe);
       }

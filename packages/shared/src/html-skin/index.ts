@@ -8,3 +8,4 @@ export * from "./preview";
 export * from "./validate-program";
 export * from "./neon-arcade";
 export * from "./ipt-power-bell";
+export * from "./slot-overlay";
