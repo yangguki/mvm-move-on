@@ -7,3 +7,4 @@ export * from "./audio";
 export * from "./youtube";
 export * from "./html-skin";
 export * from "./playback-countdown";
+export * from "./video-preload";

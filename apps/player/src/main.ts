@@ -28,6 +28,8 @@ const screens: Record<ScreenName, HTMLElement> = {
   done: $("done-screen"),
 };
 const loadingOverlay = $("loading-overlay");
+const LOADING_OVERLAY_DEFAULT = "불러오는 중...";
+const loadingOverlayText = () => loadingOverlay.querySelector(".loading");
 const pauseOverlay = $("pause-overlay");
 const errorOverlay = $("error-overlay");
 
@@ -397,6 +399,16 @@ function launchSkin(program: ProgramDetail) {
         onDone: () => {
           cleanup();
           showScreen("done");
+        },
+        onPreloadProgress: (settled, total) => {
+          const el = loadingOverlayText();
+          if (el) el.textContent = `영상 준비 중 ${settled}/${total}`;
+          showLoading(true);
+        },
+        onPreloadWaitEnd: () => {
+          const el = loadingOverlayText();
+          if (el) el.textContent = LOADING_OVERLAY_DEFAULT;
+          showLoading(false);
         },
       });
       htmlSkinPlayer.start(program as never);

@@ -1,6 +1,10 @@
 import {
   buildHtmlSkinSrcdoc,
+  collectMp4PreloadTargets,
+  createMediaPool,
   createPlaybackCountdownController,
+  createPreloadProgress,
+  MP4_PRELOAD_MAX_WAIT_MS,
   parseHtmlSkinStepText,
   parseYouTubeVideoId,
   PLAYBACK_COUNTDOWN_FALLBACK_MS,
@@ -11,6 +15,7 @@ import {
   youtubeThumbnailUrl,
   youtubeWrapperSlotOverlayCss,
   type HtmlSkinScreensMap,
+  type MediaPool,
   type PlayItem,
   type PublishedSnapshot,
   type SkinScreenSnapshot,
@@ -29,6 +34,8 @@ type SlotMount = {
   slot: "main" | "next";
   el: HTMLElement;
   kind: "video" | "youtube" | "thumbnail";
+  pooled?: boolean;
+  onPlaying?: () => void;
   ytPlayer?: {
     destroy: () => void;
     pauseVideo: () => void;
@@ -49,6 +56,8 @@ const FALLBACK_CSS = "";
 
 export type HtmlSkinPlayerCallbacks = {
   onDone: () => void;
+  onPreloadProgress?: (settled: number, total: number) => void;
+  onPreloadWaitEnd?: () => void;
 };
 
 export class HtmlSkinPlayer {
@@ -73,6 +82,12 @@ export class HtmlSkinPlayer {
   private currentItem: PlayItem | null = null;
   private mountGeneration = 0;
   private playbackCountdownStartGen = 0;
+  private startGeneration = 0;
+  /** `startGeneration` value for which preload wait already finished (showStep 0 ran once). */
+  private preloadWaitDoneGen = 0;
+  private preloadWaitTimer: number | null = null;
+  private mediaPool: MediaPool<HTMLVideoElement> | null = null;
+  private preloadUrlById = new Map<string, string>();
   private readonly playbackCountdown = createPlaybackCountdownController({
     fallbackMs: PLAYBACK_COUNTDOWN_FALLBACK_MS,
     schedule: (fn, ms) => window.setTimeout(fn, ms),
@@ -93,9 +108,12 @@ export class HtmlSkinPlayer {
   }
 
   destroy(): void {
+    this.startGeneration += 1;
+    this.clearPreloadWaitTimer();
     this.playbackCountdown.dispose();
     this.stopTimer();
     this.clearSlotMounts();
+    this.disposeMediaPool();
     if (this.iframe) this.iframe.remove();
     this.iframe = null;
     if (this.relayoutRaf != null) {
@@ -131,6 +149,10 @@ export class HtmlSkinPlayer {
   }
 
   start(program: HtmlSkinProgram): void {
+    this.startGeneration += 1;
+    const startGen = this.startGeneration;
+    this.clearPreloadWaitTimer();
+    this.disposeMediaPool();
     this.program = program;
     this.index = 0;
     this.paused = false;
@@ -153,7 +175,81 @@ export class HtmlSkinPlayer {
     this.iframe.style.zIndex = "0";
     this.wrap.appendChild(this.iframe);
     this.relayout();
+
+    const targets = collectMp4PreloadTargets(program.playItems);
+    const total = targets.length;
+    if (total === 0) {
+      this.showStep(0);
+      return;
+    }
+
+    this.preloadUrlById.clear();
+    for (const t of targets) this.preloadUrlById.set(t.id, t.url);
+
+    this.mediaPool = createMediaPool<HTMLVideoElement>({
+      create: (id) => this.createPoolVideo(this.preloadUrlById.get(id) ?? "", id, false),
+      dispose: (video) => this.disposePoolVideo(video),
+    });
+
+    const progress = createPreloadProgress(total, (settled, m) => {
+      if (startGen !== this.startGeneration) return;
+      if (this.preloadWaitDoneGen === startGen) return;
+      this.callbacks.onPreloadProgress?.(settled, m);
+    });
+
+    const settleIfReady = (id: string, video: HTMLVideoElement): void => {
+      if (video.error || video.readyState >= 3) progress.markSettled(id);
+    };
+
+    const onSettled = (id: string) => (): void => {
+      progress.markSettled(id);
+      if (this.preloadWaitDoneGen === startGen) return;
+      if (progress.isDone) this.finishPreloadWait(startGen);
+    };
+
+    for (const target of targets) {
+      const video = this.createPoolVideo(target.url, target.id, true);
+      video.preload = "auto";
+      video.load();
+      this.mediaPool.register(target.id, video);
+      this.wrap.appendChild(video);
+      settleIfReady(target.id, video);
+      video.addEventListener("canplaythrough", onSettled(target.id), { once: true });
+      video.addEventListener("loadeddata", onSettled(target.id), { once: true });
+      video.addEventListener("canplay", onSettled(target.id), { once: true });
+      video.addEventListener("error", onSettled(target.id), { once: true });
+    }
+
+    this.callbacks.onPreloadProgress?.(0, total);
+    if (progress.isDone) {
+      this.finishPreloadWait(startGen);
+      return;
+    }
+
+    this.preloadWaitTimer = window.setTimeout(() => this.finishPreloadWait(startGen), MP4_PRELOAD_MAX_WAIT_MS);
+  }
+
+  private clearPreloadWaitTimer(): void {
+    if (this.preloadWaitTimer != null) {
+      window.clearTimeout(this.preloadWaitTimer);
+      this.preloadWaitTimer = null;
+    }
+  }
+
+  private finishPreloadWait(startGen: number): void {
+    if (startGen !== this.startGeneration) return;
+    if (this.preloadWaitDoneGen === startGen) return;
+    this.preloadWaitDoneGen = startGen;
+    this.clearPreloadWaitTimer();
+    this.callbacks.onPreloadWaitEnd?.();
+    if (!this.program || !this.iframe) return;
     this.showStep(0);
+  }
+
+  private disposeMediaPool(): void {
+    this.mediaPool?.disposeAll();
+    this.mediaPool = null;
+    this.preloadUrlById.clear();
   }
 
   private relayout = (): void => {
@@ -213,6 +309,19 @@ export class HtmlSkinPlayer {
 
   private clearSlotMounts(): void {
     this.slotMounts.forEach((mount) => {
+      if (mount.kind === "video") {
+        const video = mount.el as HTMLVideoElement;
+        if (mount.onPlaying) {
+          video.removeEventListener("playing", mount.onPlaying);
+          mount.onPlaying = undefined;
+        }
+        if (mount.pooled) {
+          video.pause();
+          video.currentTime = 0;
+          this.returnVideoToPool(video);
+          return;
+        }
+      }
       try {
         mount.ytPlayer?.destroy();
       } catch {
@@ -289,7 +398,19 @@ export class HtmlSkinPlayer {
       this.postTokens(tokens);
       this.mountSlots(item, screen);
       const waitForPlayback = !!(screen.hasVideoSlot && item.video?.url);
+      const mainMount = this.slotMounts.find((m) => m.slot === "main" && m.kind === "video");
       this.playbackCountdown.arm({ waitForPlayback });
+      if (mainMount) {
+        const main = mainMount.el as HTMLVideoElement;
+        const gen = this.mountGeneration;
+        if (!main.paused && main.readyState >= 2) {
+          this.playbackCountdown.notifyPlaybackStarted();
+        }
+        void main.play().then(() => {
+          if (gen !== this.mountGeneration) return;
+          if (!main.paused) this.playbackCountdown.notifyPlaybackStarted();
+        });
+      }
     };
   }
 
@@ -323,13 +444,9 @@ export class HtmlSkinPlayer {
         void this.mountMainYouTube(ytId, this.mountGeneration);
       } else {
         const gen = this.mountGeneration;
-        const main = this.createSlotVideo(url, "main");
-        main.addEventListener("playing", () => {
-          if (gen !== this.mountGeneration) return;
-          this.playbackCountdown.notifyPlaybackStarted();
-        });
-        this.wrap.appendChild(main);
-        this.slotMounts.push({ slot: "main", el: main, kind: "video" });
+        const videoId = item.video.id?.trim();
+        const mount = this.acquireSlotVideo(url, videoId, "main", gen);
+        this.slotMounts.push(mount);
       }
     }
     if (screen.hasNextVideoSlot && item.next?.video?.url) {
@@ -340,9 +457,9 @@ export class HtmlSkinPlayer {
         this.wrap.appendChild(thumb);
         this.slotMounts.push({ slot: "next", el: thumb, kind: "thumbnail" });
       } else {
-        const next = this.createSlotVideo(url, "next");
-        this.wrap.appendChild(next);
-        this.slotMounts.push({ slot: "next", el: next, kind: "video" });
+        const videoId = item.next.video.id?.trim();
+        const mount = this.acquireSlotVideo(url, videoId, "next", this.mountGeneration);
+        this.slotMounts.push(mount);
       }
     }
     this.positionSlotMounts();
@@ -481,6 +598,103 @@ export class HtmlSkinPlayer {
     if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed;
     const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
     return new URL(path, window.location.origin).href;
+  }
+
+  private createPoolVideo(url: string, videoId: string, primary: boolean): HTMLVideoElement {
+    const video = document.createElement("video");
+    video.src = this.resolveMediaUrl(url);
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    if (primary) {
+      video.dataset.mvnPool = "1";
+      video.dataset.videoId = videoId;
+    }
+    video.style.display = "none";
+    video.style.position = "absolute";
+    video.style.width = "0";
+    video.style.height = "0";
+    video.style.pointerEvents = "none";
+    video.style.overflow = "hidden";
+    return video;
+  }
+
+  private disposePoolVideo(video: HTMLVideoElement): void {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.remove();
+  }
+
+  private returnVideoToPool(video: HTMLVideoElement): void {
+    delete video.dataset.slot;
+    delete video.dataset.kind;
+    video.style.display = "none";
+    video.style.width = "0";
+    video.style.height = "0";
+    video.style.left = "";
+    video.style.top = "";
+    video.style.zIndex = "";
+    video.style.objectFit = "";
+    video.autoplay = false;
+    this.mediaPool?.release(video);
+    if (!video.parentElement) this.wrap.appendChild(video);
+  }
+
+  private preparePooledVideoForSlot(video: HTMLVideoElement, slot: "main" | "next"): void {
+    video.dataset.slot = slot;
+    video.dataset.kind = "video";
+    video.controls = false;
+    video.muted = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.loop = true;
+    video.style.display = "none";
+    video.style.position = "absolute";
+    video.style.pointerEvents = "none";
+    video.style.zIndex = "2";
+    video.style.overflow = "hidden";
+    video.style.objectFit = "cover";
+    video.style.width = "";
+    video.style.height = "";
+    video.currentTime = 0;
+    if (!video.parentElement) this.wrap.appendChild(video);
+    void video.play().catch(() => {});
+  }
+
+  private acquireSlotVideo(
+    url: string,
+    videoId: string | undefined,
+    slot: "main" | "next",
+    mountGeneration: number,
+  ): SlotMount {
+    const pool = this.mediaPool;
+    if (videoId && pool?.has(videoId)) {
+      const video = pool.acquire(videoId);
+      this.preparePooledVideoForSlot(video, slot);
+      void video.play().catch(() => {});
+      const mount: SlotMount = { slot, el: video, kind: "video", pooled: true };
+      if (slot === "main") {
+        const onPlaying = () => {
+          if (mountGeneration !== this.mountGeneration) return;
+          this.playbackCountdown.notifyPlaybackStarted();
+        };
+        mount.onPlaying = onPlaying;
+        video.addEventListener("playing", onPlaying);
+      }
+      return mount;
+    }
+    const fallback = this.createSlotVideo(url, slot);
+    this.wrap.appendChild(fallback);
+    if (slot === "main") {
+      const onPlaying = () => {
+        if (mountGeneration !== this.mountGeneration) return;
+        this.playbackCountdown.notifyPlaybackStarted();
+      };
+      fallback.addEventListener("playing", onPlaying);
+      return { slot, el: fallback, kind: "video", onPlaying };
+    }
+    return { slot, el: fallback, kind: "video" };
   }
 
   /** HTML 스킨 슬롯 오버레이 — controls 없음, muted autoplay playsinline loop */
